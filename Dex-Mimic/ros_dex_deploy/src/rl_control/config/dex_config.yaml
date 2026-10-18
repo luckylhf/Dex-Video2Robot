@@ -1,0 +1,204 @@
+motor_num: 29
+dt: 0.01
+sim: false
+debug: false
+control_tool: keyboard
+joystick:
+  initial_height: 0.957
+  max_height: 0.991
+  min_height: 0.791
+  x_command_offset: 0.0
+  y_command_offset: 0.0
+  yaw_command_offset: 0.0
+  max_x_plus_speed: 0.8
+  max_x_minus_speed: 0.5
+  max_y_speed: 0.5
+  max_yaw_speed: 0.8
+keyboard:
+  initial_height: 0.9
+  forward_command_offset: 0.0
+  lateral_command_offset: 0.0
+  rotation_command_offset: 0
+  height_step: 0.05
+  max_forward_speed: 1.5
+  max_lateral_speed: 0.5
+  max_rotation_speed: 0.8
+xbox:
+  initial_height: 0.89
+  forward_command_offset: 0.0
+  lateral_command_offset: 0.0
+  rotation_command_offset: 0.0
+  height_step: 0.05
+robot_interface:
+  clip_actions: false
+  waist_control_status:
+  - ZERO
+  - STOP
+  - WALKAMP
+  legs_control_status: []
+  arms_control_status:
+  - ZERO
+  - STOP
+  - WALKAMP
+  left_arm_only_status: []
+  right_arm_only_status: []
+  xsense_data_roll_offset: 0.0
+  zero_pos:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  ct_scale:
+  - 2.1
+  - 2.1
+  - 3.207
+  - 2.673
+  - 2.6
+  - 2.6
+  - 2.1
+  - 2.1
+  - 3.207
+  - 2.673
+  - 2.6
+  - 2.6
+  - 3.207
+  - 3.207
+  - 3.207
+  - 3.207
+  - 2.28
+  - 5.89
+  - 5.89
+  - 3.35
+  - 2.3
+  - 2.3
+  - 3.207
+  - 2.28
+  - 5.89
+  - 5.89
+  - 3.35
+  - 2.3
+  - 2.3
+  disable_joints: false
+  joint_limits:
+    l_hip_pitch:
+      min: -3.0543261909900763
+      max: 2.792526803190927
+    l_hip_roll:
+      min: -0.41887902047863906
+      max: 2.6179938779914944
+    l_hip_yaw:
+      min: -1.3962634015954636
+      max: 4.4505895925855405
+    l_knee:
+      min: -0.08726646259971647
+      max: 2.5307274153917776
+    l_ankle_pitch:
+      min: -1.1868238913561442
+      max: 0.5235987755982988
+    l_ankle_roll:
+      min: -0.5235987755982988
+      max: 0.5235987755982988
+    r_hip_pitch:
+      min: -3.0543261909900763
+      max: 2.792526803190927
+    r_hip_roll:
+      min: -2.6179938779914944
+      max: 0.41887902047863906
+    r_hip_yaw:
+      min: -4.4505895925855405
+      max: 1.3962634015954636
+    r_knee:
+      min: -0.08726646259971647
+      max: 2.5307274153917776
+    r_ankle_pitch:
+      min: -1.1868238913561442
+      max: 0.5235987755982988
+    r_ankle_roll:
+      min: -0.5235987755982988
+      max: 0.5235987755982988
+    waist_yaw:
+      min: -2.6179938779914944
+      max: 3.2288591161895095
+    waist_roll:
+      min: -0.4363323129985824
+      max: 0.4363323129985824
+    waist_pitch:
+      min: -0.5235987755982988
+      max: 0.8726646259971648
+    l_shoulder_pitch:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    l_shoulder_roll:
+      min: -0.19198621771937624
+      max: 3.3335788713091694
+    l_shoulder_yaw:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    l_elbow:
+      min: -2.548180707911721
+      max: 0.19198621771937624
+    l_wrist_yaw:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    l_wrist_pitch:
+      min: -1.3264502315156903
+      max: 1.3264502315156903
+    l_wrist_roll:
+      min: -1.3264502315156903
+      max: 1.3264502315156903
+    r_shoulder_pitch:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    r_shoulder_roll:
+      min: -3.3335788713091694
+      max: 0.19198621771937624
+    r_shoulder_yaw:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    r_elbow:
+      min: -2.548180707911721
+      max: 0.19198621771937624
+    r_wrist_yaw:
+      min: -2.844886680750757
+      max: 2.844886680750757
+    r_wrist_pitch:
+      min: -1.3264502315156903
+      max: 1.3264502315156903
+    r_wrist_roll:
+      min: -1.3264502315156903
+      max: 1.3264502315156903
+  ankle_kp_p:
+  - 15.0
+  - 15.0
+  - 15.0
+  - 15.0
+  ankle_kd_p:
+  - 1.25
+  - 1.25
+  - 1.25
+  - 1.25

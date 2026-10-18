@@ -1,0 +1,7 @@
+# PKL/NPZ、MuJoCo、离线 ONNX 验证；无需 Isaac Sim。
+numpy>=1.26
+scipy>=1.14
+mujoco==3.10.0
+onnx>=1.17
+onnxruntime>=1.17,<2
+PyYAML>=6

@@ -1,0 +1,20 @@
+{
+  "source": "https://github.com/Open-X-Humanoid/xSIM_MUJOCO/blob/942469c660ec93e6d7ae9e78026db81cfa623591/resources/tiangong3/urdf/tiangong3.xml",
+  "armature_kg_m2": {
+    "hip_pitch_.*_joint": 0.24,
+    "hip_roll_.*_joint": 0.24,
+    "hip_yaw_.*_joint": 0.18,
+    "knee_pitch_.*_joint": 0.37,
+    "ankle_.*_joint": 0.032,
+    "waist_.*_joint": 0.17,
+    "shoulder_.*_joint": 0.1,
+    "elbow_.*_joint": 0.1,
+    "wrist_.*_joint": 0.0236
+  },
+  "mujoco_passive_damping": 1.0,
+  "mujoco_frictionloss_Nm": 0.1,
+  "physics_dt": 0.001,
+  "policy_dt": 0.02,
+  "integrator": "implicitfast",
+  "solver": "CG"
+}

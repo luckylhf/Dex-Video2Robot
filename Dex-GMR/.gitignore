@@ -1,0 +1,47 @@
+# ── Python 字节码 / 缓存 ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── 打包 / 安装元数据（pip install -e 会产生 <pkg>.egg-info）──────────
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── 虚拟环境 ────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── 测试 / 静态检查缓存 ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── macOS ──────────────────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ── 运行产物：PKL / 中间文件 / 视频，由脚本按需生成 ──────────────────
+# 若需要让空目录随仓库存在，在目录内放 .gitkeep 并把对应规则改成 “目录/*”
+data/outputs/*
+data/work/*
+data/videos/*
+
+# Third-party human parameters are prepared separately for a source release.
+# 人体模型参数受 MPI 许可限制，不随包分发；只保留 SHA256SUMS 与说明文件。
+assets/body_models/smplx/*.npz
+assets/body_models/smpl/*.pkl
+assets/body_models/**/*.pkl
+assets/body_models/**/*.npz
+
+# ── IDE / 编辑器 ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp

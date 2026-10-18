@@ -1,0 +1,151 @@
+{
+  "checkpoint_sha256": "eb77cd1f9083372927ed8e95e4fbdf16a07ae4e9dc9fcb1102f9d5352678b120",
+  "runtime_contract": {
+    "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
+    "asset_sha256": "da1951e7711773ba04a136ea346e3612e6f6414a00e007587ef320da91a7a6d7",
+    "control_dt": 0.02,
+    "actuators": {
+      "legs": {
+        "stiffness": {
+          "hip_yaw_.*_joint": 350.0,
+          "hip_roll_.*_joint": 600.0,
+          "hip_pitch_.*_joint": 600.0,
+          "knee_pitch_.*_joint": 650.0
+        },
+        "damping": {
+          "hip_yaw_.*_joint": 10.0,
+          "hip_roll_.*_joint": 15.0,
+          "hip_pitch_.*_joint": 15.0,
+          "knee_pitch_.*_joint": 14.0
+        },
+        "armature": {
+          "hip_pitch_l_joint": 0.24,
+          "hip_roll_l_joint": 0.24,
+          "hip_yaw_l_joint": 0.18,
+          "knee_pitch_l_joint": 0.37,
+          "hip_pitch_r_joint": 0.24,
+          "hip_roll_r_joint": 0.24,
+          "hip_yaw_r_joint": 0.18,
+          "knee_pitch_r_joint": 0.37
+        },
+        "effort_limit_sim": {
+          "hip_pitch_l_joint": 235.0,
+          "hip_roll_l_joint": 235.0,
+          "hip_yaw_l_joint": 150.0,
+          "knee_pitch_l_joint": 400.0,
+          "hip_pitch_r_joint": 235.0,
+          "hip_roll_r_joint": 235.0,
+          "hip_yaw_r_joint": 150.0,
+          "knee_pitch_r_joint": 400.0
+        }
+      },
+      "feet": {
+        "stiffness": {
+          "ankle_pitch_.*_joint": 60.0,
+          "ankle_roll_.*_joint": 35.0
+        },
+        "damping": {
+          "ankle_pitch_.*_joint": 7.0,
+          "ankle_roll_.*_joint": 3.0
+        },
+        "armature": {
+          "ankle_pitch_l_joint": 0.032,
+          "ankle_roll_l_joint": 0.032,
+          "ankle_pitch_r_joint": 0.032,
+          "ankle_roll_r_joint": 0.032
+        },
+        "effort_limit_sim": {
+          "ankle_pitch_l_joint": 55.0,
+          "ankle_roll_l_joint": 55.0,
+          "ankle_pitch_r_joint": 55.0,
+          "ankle_roll_r_joint": 55.0
+        }
+      },
+      "arms": {
+        "stiffness": {
+          "shoulder_pitch_.*_joint": 150.0,
+          "shoulder_roll_.*_joint": 50.0,
+          "shoulder_yaw_.*_joint": 50.0,
+          "elbow_pitch_.*_joint": 150.0
+        },
+        "damping": {
+          "shoulder_pitch_.*_joint": 5.0,
+          "shoulder_roll_.*_joint": 2.5,
+          "shoulder_yaw_.*_joint": 2.5,
+          "elbow_pitch_.*_joint": 5.0
+        },
+        "armature": {
+          "shoulder_pitch_l_joint": 0.1,
+          "shoulder_roll_l_joint": 0.1,
+          "shoulder_yaw_l_joint": 0.1,
+          "elbow_pitch_l_joint": 0.1,
+          "shoulder_pitch_r_joint": 0.1,
+          "shoulder_roll_r_joint": 0.1,
+          "shoulder_yaw_r_joint": 0.1,
+          "elbow_pitch_r_joint": 0.1
+        },
+        "effort_limit_sim": {
+          "shoulder_pitch_l_joint": 90.0,
+          "shoulder_roll_l_joint": 90.0,
+          "shoulder_yaw_l_joint": 50.0,
+          "elbow_pitch_l_joint": 50.0,
+          "shoulder_pitch_r_joint": 90.0,
+          "shoulder_roll_r_joint": 90.0,
+          "shoulder_yaw_r_joint": 50.0,
+          "elbow_pitch_r_joint": 50.0
+        }
+      },
+      "arms_distal": {
+        "stiffness": {
+          "elbow_yaw_.*_joint": 500.0,
+          "wrist_pitch_.*_joint": 200.0,
+          "wrist_roll_.*_joint": 200.0
+        },
+        "damping": {
+          "elbow_yaw_.*_joint": 15.0,
+          "wrist_pitch_.*_joint": 8.0,
+          "wrist_roll_.*_joint": 8.0
+        },
+        "armature": {
+          "elbow_yaw_l_joint": 0.1,
+          "wrist_pitch_l_joint": 0.0236,
+          "wrist_roll_l_joint": 0.0236,
+          "elbow_yaw_r_joint": 0.1,
+          "wrist_pitch_r_joint": 0.0236,
+          "wrist_roll_r_joint": 0.0236
+        },
+        "effort_limit_sim": {
+          "elbow_yaw_l_joint": 40.0,
+          "wrist_pitch_l_joint": 40.0,
+          "wrist_roll_l_joint": 40.0,
+          "elbow_yaw_r_joint": 40.0,
+          "wrist_pitch_r_joint": 40.0,
+          "wrist_roll_r_joint": 40.0
+        }
+      },
+      "waist": {
+        "stiffness": {
+          "waist_yaw_joint": 400.0,
+          "waist_roll_joint": 400.0,
+          "waist_pitch_joint": 400.0
+        },
+        "damping": {
+          "waist_yaw_joint": 10.0,
+          "waist_roll_joint": 10.0,
+          "waist_pitch_joint": 10.0
+        },
+        "armature": {
+          "waist_yaw_joint": 0.17,
+          "waist_roll_joint": 0.17,
+          "waist_pitch_joint": 0.17
+        },
+        "effort_limit_sim": {
+          "waist_yaw_joint": 200.0,
+          "waist_roll_joint": 150.0,
+          "waist_pitch_joint": 150.0
+        }
+      }
+    }
+  },
+  "provenance": "Preserved model_3900.pt; runtime verified on the current body with tg3-armature. Historical training contract was not recorded."
+}

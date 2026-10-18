@@ -1,0 +1,22 @@
+{
+  "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
+  "onnx_sha256": "4f0366f1969808ca455de10b2ab79b66868253113d46f3af7d0938d85a0d60ee",
+  "contract_version": "2",
+  "asset_sha256": "da1951e7711773ba04a136ea346e3612e6f6414a00e007587ef320da91a7a6d7",
+  "motor_profile": "tg3-armature",
+  "purpose": "standing-demo",
+  "training_control_dt": 0.02,
+  "policy_control_dt": 0.01,
+  "motions": [
+    {
+      "file": "standing.npz",
+      "frames": 250,
+      "fps": 50,
+      "duration_s": 5.0,
+      "fk_max_error_m": 1.862645149230957e-09,
+      "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
+      "sha256": "ed46ceeb7e707821acbb32ed43ae9bbdd9723dbf99918a84fd5e762cce3992a2"
+    }
+  ],
+  "hardware_tested": false
+}

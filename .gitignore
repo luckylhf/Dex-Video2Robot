@@ -1,0 +1,95 @@
+# =====================================================================
+# Dex 工具链仓库根级忽略规则
+# 子包内的 Dex-GMR/.gitignore、Dex-Mimic/.gitignore 仍然生效，
+# 本文件负责跨包的公共规则，并把版权资产的排除写成仓库级兜底。
+# =====================================================================
+
+# ── 版权资产：SMPL-X / SMPL 人体模型参数，禁止入库、禁止分发 ──────────
+# 受 Max Planck Institute 许可限制（仅非商业科研，不允许再分发）。
+# 仓库只保留说明与哈希清单，参数文件由使用者自行从 smpl-x.is.tue.mpg.de 获取。
+Dex-GMR/assets/body_models/smplx/*.npz
+Dex-GMR/assets/body_models/smplx/*.pkl
+Dex-GMR/assets/body_models/smpl/*.pkl
+Dex-GMR/assets/body_models/**/*.npz
+Dex-GMR/assets/body_models/**/*.pkl
+# GVHMR 自带的体模目录同样适用
+**/inputs/checkpoints/body_models/**/*.npz
+**/inputs/checkpoints/body_models/**/*.pkl
+
+# 保留体模目录里的说明文档与哈希清单
+!Dex-GMR/assets/body_models/README.md
+!Dex-GMR/assets/body_models/smplx/SHA256SUMS
+!Dex-GMR/assets/body_models/smplx/README.md
+
+# ── Python 字节码 / 缓存 ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# ── 打包 / 安装元数据（pip install -e 产生 <pkg>.egg-info）──────────
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── 虚拟环境 ────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── 测试 / 静态检查缓存 ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── macOS ──────────────────────────────────────────────────────────
+.DS_Store
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+
+# ── 运行产物：GMR 输入视频 / 中间工作目录 / 输出 ────────────────────
+Dex-GMR/data/videos/*
+!Dex-GMR/data/videos/README.md
+Dex-GMR/data/outputs/
+Dex-GMR/data/work/
+
+# ── 运行产物：Mimic 训练、播放、导出 ────────────────────────────────
+Dex-Mimic/outputs/
+Dex-Mimic/logs/
+logs/
+
+# ── ROS 2 / colcon 构建产物 ─────────────────────────────────────────
+Dex-Mimic/ros_dex_deploy/build/
+Dex-Mimic/ros_dex_deploy/install/
+Dex-Mimic/ros_dex_deploy/log/
+bag/
+
+# ── 转换后的动作数据：由 prepare.sh / pkl_to_npz.py 生成 ────────────
+# dataset/standing/standing.npz 是随包参考动作，仍然入库
+Dex-Mimic/dataset/npz_dex/*
+Dex-Mimic/dataset/npz_dex_raw/*
+!Dex-Mimic/dataset/npz_dex/README.md
+!Dex-Mimic/dataset/npz_dex_raw/README.md
+
+# ── 仿真 / MuJoCo 临时文件 ──────────────────────────────────────────
+*.usd
+*.usda
+*.usdc
+MUJOCO_LOG.TXT
+*.back
+*.bak
+*.orig
+*~
+
+# ── IDE / 编辑器 ───────────────────────────────────────────────────
+.idea/
+.vscode/
+.history/
+*.swp
+*.swo

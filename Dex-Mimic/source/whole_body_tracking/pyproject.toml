@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools", "wheel", "toml"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whole_body_tracking"
+version = "0.1.0"
+description = "Whole-body motion tracking for Walker Tienkung Dex based on Isaac Lab"
+requires-python = ">=3.11"
+
+# Core dependencies — versions reflect what is installed in the mimic conda env.
+# Isaac Lab / Isaac Sim packages are installed from source and not listed here.
+dependencies = [
+    # Deep learning
+    "torch==2.7.0",
+    # RL framework
+    "rsl-rl-lib==2.3.3",
+    # Simulation
+    "gymnasium>=1.0.0",
+    "mujoco==3.10.0",
+    # ONNX export & inference
+    "onnx>=1.14.0",
+    "onnxruntime>=1.17.0,<2",
+    # Numerics
+    "numpy>=1.24.0",
+    "scipy>=1.14.0",
+    # Logging
+    "tensorboard>=2.13.0",
+    "wandb>=0.15.0",
+    # Utilities
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+teleop = [
+    "pynput>=1.7.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["whole_body_tracking*"]
+
+[tool.setuptools.package-data]
+whole_body_tracking = ["assets/dex_evt/**/*", "robots/*.json"]
+
+[tool.setuptools.exclude-package-data]
+whole_body_tracking = ["**/*.usd", "**/*.usda", "**/*.usdc", "**/*.pyc"]

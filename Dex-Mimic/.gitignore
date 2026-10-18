@@ -1,0 +1,52 @@
+# ── Python 字节码 / 缓存 ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── 打包 / 安装元数据（pip install -e 会产生 <pkg>.egg-info）──────────
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── 虚拟环境（init_env.sh 在 ros_dex_deploy/.venv 创建）───────────────
+.venv/
+venv/
+env/
+
+# ── 测试 / 静态检查缓存 ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── macOS ──────────────────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ── ROS 2 / colcon 构建产物 ─────────────────────────────────────────
+ros_dex_deploy/build/
+ros_dex_deploy/install/
+ros_dex_deploy/log/
+
+# ── 训练 / 播放日志（train_dex.sh、play_dex.sh 产生）────────────────
+logs/
+
+# ── 转换后的动作数据：由 prepare.sh / pkl_to_npz.py 生成 ──────────────
+# dataset/standing/standing.npz 是随包参考动作，仍然入库
+dataset/npz_dex/*
+dataset/npz_dex_raw/*
+!dataset/npz_dex/README.md
+!dataset/npz_dex_raw/README.md
+
+# ── IDE / 编辑器 ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+
+# 说明：部署产物 src/rl_control/policy/mimic/out/{policy_merged.onnx,bundle.json,npz/*}
+# 属于要带到机器人的交付件，默认入库；若体积敏感再自行追加忽略规则。
