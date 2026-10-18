@@ -121,4 +121,4 @@ python tools/release.py --output /tmp/dex-pipeline-release.tar.gz
 
 ## 来源与许可
 
-感谢 [xGMR](https://github.com/Open-X-Humanoid/xGMR)、[xMimic](https://github.com/Open-X-Humanoid/xMimic)、[xSIM_MUJOCO](https://github.com/Open-X-Humanoid/xSIM_MUJOCO)、[GVHMR](https://github.com/zju3dv/GVHMR)、Isaac Lab、MuJoCo 与 Mink。组件沿用各自的作者声明与许可，见 [Dex-GMR/LICENSE](Dex-GMR/LICENSE)、[Dex-Mimic/LICENCE](Dex-Mimic/LICENCE) 及各组件目录。人体模型、机器人模型和第三方权重的来源说明随对应资源保留。
+感谢 [xGMR](https://github.com/Open-X-Humanoid/xGMR)、[xMimic](https://github.com/Open-X-Humanoid/xMimic)、[xSIM_MUJOCO](https://github.com/Open-X-Humanoid/xSIM_MUJOCO)、[GVHMR](https://github.com/zju3dv/GVHMR)、Isaac Lab、MuJoCo 与 Mink。本仓库整体采用 BSD 3-Clause，全文见 [LICENSE](LICENSE)；组件沿用各自的作者声明与许可，见 [Dex-GMR/LICENSE](Dex-GMR/LICENSE)、[Dex-Mimic/LICENCE](Dex-Mimic/LICENCE) 及各组件目录。人体模型、机器人模型和第三方权重的来源说明随对应资源保留。

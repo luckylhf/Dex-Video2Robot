@@ -14,7 +14,7 @@ EXCLUDED = {'.git', '.venv', '__pycache__', '.pytest_cache', 'build', 'install',
 
 
 def release_files(include_data=False):
-    for name in ['.gitignore', 'README.md', 'docs', 'tools', 'Dex-GMR', 'Dex-Mimic']:
+    for name in ['LICENSE', '.gitignore', 'README.md', 'docs', 'tools', 'Dex-GMR', 'Dex-Mimic']:
         entry = ROOT / name
         for path in ([entry] if entry.is_file() else sorted(entry.rglob('*'))):
             if not path.is_file() or path.is_symlink():
