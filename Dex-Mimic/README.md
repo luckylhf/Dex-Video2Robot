@@ -103,7 +103,7 @@ RESUME=false LOAD_CKPT=policy/dex/wbt_model_46400.pt \
   bash train_dex.sh medium dataset/npz_dex/dance_with_transition.npz 1
 ```
 
-先验证环境时可用 `NUM_ENVS=64 MAX_ITER=2` 执行相同入口。两轮只证明能完成 PPO 更新，不证明动作质量；约 3000 次迭代初见成效是团队经验，目标动作还需评估。
+先验证环境时可用 `NUM_ENVS=64 MAX_ITER=101` 执行相同入口。`save_interval=100`，且训练循环结束后不会补存 checkpoint，所以迭代数少于 100 时不会落盘任何权重；101 次可产出 `model_100.pt`，够做一次播放验证。冒烟测试只证明能完成 PPO 更新，不证明动作质量；约 3000 次迭代初见成效是团队经验，目标动作还需评估。
 
 | 模式 | 默认总环境数 | 默认迭代数 |
 | --- | ---: | ---: |
