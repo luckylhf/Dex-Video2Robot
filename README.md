@@ -38,7 +38,7 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 
 电机参数来源与数值含义见 [模型与动力学说明](docs/model_and_dynamics.md)。
 
-**各环节分别保持工程师原配置：Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署主循环与推理 100 Hz。** 真机的 100 Hz 要求适用于 ROS 部署。参考动作为 50 fps，独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，播放速度均不变。具体区别见 [部署频率说明](docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
+**各环节分别保持软件包原配置：Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署主循环与推理 100 Hz。** 真机的 100 Hz 要求适用于 ROS 部署。参考动作为 50 fps，独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，播放速度均不变。具体区别见 [部署频率说明](docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
 
 ## 随包权重
 
@@ -46,8 +46,8 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 
 | 文件 | 用途 |
 | --- | --- |
-| `standing_model_2000.pt` | 工程师提供的预制站立权重，用于微调初始化 |
-| `wbt_model_46400.pt` | 工程师提供的预制动作跟踪权重，用于加快新动作训练 |
+| `standing_model_2000.pt` | 软件包提供的预制站立权重，用于微调初始化 |
+| `wbt_model_46400.pt` | 软件包提供的预制动作跟踪权重，用于加快新动作训练 |
 | `standing_baseline.pt` | 适配当前本体的站立基线，用于站立播放和默认演示 |
 
 **团队经验：加载预制动作权重后，约 3000 次迭代可开始看到效果。** 这是训练起点的经验值，不代表任意动作在 3000 次迭代后都已收敛。目标舞蹈仍需检查跟踪误差、跌倒和起止切换。
@@ -72,12 +72,16 @@ export DEX_ROOT="$(pwd)"
 
 各阶段环境独立：
 
-| 阶段 | 环境 |
-| --- | --- |
-| GVHMR 人体预测 | 上游 GVHMR 的独立 GPU 环境，通过 `GVHMR_PYTHON` 调用 |
-| IK、PKL/NPZ、离线 MuJoCo | GMR / 离线 Python 环境 |
-| 训练、Isaac 播放及导出 | Isaac Lab 2.2.0、Isaac Sim 5.1 SDK、Python 3.11、Torch 2.7.0、RSL-RL 2.3.3 |
-| ROS2 MuJoCo / 真机 | Ubuntu 22.04 + Humble + Python 3.10，或 Ubuntu 24.04 + Jazzy + Python 3.12，使用部署目录的 venv |
+| 阶段 | 系统 | Python | 关键依赖 | GPU |
+| --- | --- | --- | --- | --- |
+| GVHMR 人体预测 | Linux | 3.10 | Torch 2.3.0+cu121、PyTorch3D | **必需** NVIDIA |
+| IK / PKL / 离线 MuJoCo | Linux / macOS | ≥3.11 | MuJoCo 3.10.0、Mink 1.3.0、SMPL-X 0.1.28、Torch ≥2.7 | 可选，CPU 可跑 |
+| Mimic 离线转换与检查 | Linux / macOS | 3.11 | `requirements-offline.txt`（MuJoCo + ONNX Runtime） | 不需要 |
+| Isaac 训练 / 播放 / 导出 | **Ubuntu 22.04** | 3.11 | Isaac Lab 2.2.0、Isaac Sim 5.1、Torch 2.7.0、RSL-RL 2.3.3 | **必需** NVIDIA |
+| ROS2 MuJoCo / 真机 | Ubuntu 22.04 或 24.04 | 3.10 / 3.12 | Humble 或 Jazzy、MuJoCo、ONNX Runtime、Tk | 不需要 |
+
+GVHMR 通过 `GVHMR_PYTHON` 调用，与 GMR、Isaac 三套环境互不混用；各阶段的安装命令见对应子包 README。
+
 
 已配置 ROS2 环境时，默认站立演示的入口为：
 

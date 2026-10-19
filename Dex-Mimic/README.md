@@ -92,7 +92,7 @@ python scripts/pkl_to_npz.py \
 
 切换到 Isaac 环境。默认采用 `tg3-armature` 电机配置。
 
-各环节分别沿用工程师原配置：**Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署推理 100 Hz**。参考 NPZ 为 50 fps；独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，均按正常时长播放。真机至少 100 Hz 的实测要求适用于 ROS 部署，不扩展到训练和独立 MuJoCo。原因与周期记录方式见 [动力学说明](../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
+各环节分别沿用软件包原配置：**Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署推理 100 Hz**。参考 NPZ 为 50 fps；独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，均按正常时长播放。真机至少 100 Hz 的实测要求适用于 ROS 部署，不扩展到训练和独立 MuJoCo。原因与周期记录方式见 [动力学说明](../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
 
 动作初始化示例：
 

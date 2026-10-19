@@ -68,7 +68,7 @@ bash run_sim.sh
 
 MuJoCo 从选中 ONNX 读取 armature、被动阻尼、摩擦与求解器配置，使用 1 ms 物理步长；ROS 主循环和 Mimic 网络推理均为 **100 Hz**，`physical_dt=0.01`、`decimation=1`。
 
-工程师真机实测要求：当前电机特性和 Kp/Kd 配置下，部署闭环至少需要 100 Hz，50 Hz 无法保持平衡。因此每 10 ms 必须使用新观测重新推理，不能只把旧目标以 100 Hz 重发。参考动作仍为 50 fps，每帧使用两次，播放速度不变；Isaac 训练仍为 50 Hz。电机内部 PD 频率与 ROS 发送、网络推理频率是不同概念。详细依据及周期字段含义见 [为什么部署至少需要 100 Hz](../../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
+真机实测要求：当前电机特性和 Kp/Kd 配置下，部署闭环至少需要 100 Hz，50 Hz 无法保持平衡。因此每 10 ms 必须使用新观测重新推理，不能只把旧目标以 100 Hz 重发。参考动作仍为 50 fps，每帧使用两次，播放速度不变；Isaac 训练仍为 50 Hz。电机内部 PD 频率与 ROS 发送、网络推理频率是不同概念。详细依据及周期字段含义见 [为什么部署至少需要 100 Hz](../../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
 
 旧 `bundle.json` 若仍记录 `policy_control_dt=0.02`，请按训练说明用原 ONNX 和匹配 NPZ 向新目录重新执行 `prepare_deploy.py`；无需为修改部署周期改写权重的训练元数据。
 
