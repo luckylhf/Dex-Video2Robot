@@ -97,6 +97,7 @@ GUI 顺序：F=`down` → 勾 D 后取消 → 用 DOWN 降至脚底贴地 → �
 ## 目录与发行边界
 
 ```text
+LICENSE                         # BSD 3-Clause
 README.md                       # 总览
 docs/                           # 模型、动力学、来源说明与免责声明
 tools/                          # 只读发行检查及打包
@@ -104,7 +105,7 @@ Dex-GMR/                        # 视频与动作重定向
 Dex-Mimic/                      # 训练、仿真与部署
 ```
 
-发行包包含两个功能包、机器人资产、预制权重、默认站立演示及回归测试源码。用户视频和中间数据默认不包含在内，可通过 `--include-data` 选择携带。
+发行包包含两个功能包、机器人资产、预制权重、默认站立演示及回归测试源码。打包清单为 `LICENSE`、`.gitignore`、`README.md`、`docs/`、`tools/`、`Dex-GMR/`、`Dex-Mimic/`，其中 `Dex-Mimic/outputs/` 单独排除。用户视频和中间数据默认不包含在内，可通过 `--include-data` 选择携带。
 
 ```bash
 cd "$DEX_ROOT"

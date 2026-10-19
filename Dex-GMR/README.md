@@ -81,7 +81,7 @@ bash run_video.sh /path/to/dance.mp4 \
   --output "$DEX_ROOT/Dex-GMR/data/outputs/dance.pkl"
 ```
 
-工作目录必须是新的 ASCII 路径。中文视频名可以保留，传给 Hydra 的规范化文件名固定为 `source_30fps.mp4`。不指定工作目录时，脚本在 `data/work/` 下创建 ASCII 名称的独立任务目录。
+工作目录必须是新的 ASCII 路径。中文视频名可以保留，传给 Hydra 的规范化文件名固定为 `source_30fps.mp4`。省略 `--output` 时输出 PKL 名沿用视频文件名（`data/outputs/<视频名>.pkl`），中文名会带进 PKL 路径；需要全程 ASCII 时显式指定 `--output`。不指定工作目录时，脚本在 `data/work/` 下创建 ASCII 名称的独立任务目录。
 
 主要输出：
 
@@ -105,7 +105,7 @@ bash run_video.sh /path/to/dance.mp4 \
   --output "$DEX_ROOT/Dex-GMR/data/outputs/dance.pkl" --resume
 ```
 
-脚本核对视频哈希、模型与 IK 配置，跳过已生成的规范视频、人体预测和 PKL。GVHMR 已保存人体预测而仅渲染失败时，会提示并继续 IK，不必整段重算。未指定 `--resume` 时不会覆盖已有 PKL。
+脚本核对视频哈希、模型与 IK 配置，跳过已生成的规范视频、人体预测和 PKL。GVHMR 已保存人体预测而仅渲染失败时，会提示并继续 IK，不必整段重算。未指定 `--resume` 时，若输出 PKL 已存在会直接报错退出（`Output already exists`），既不覆盖也不跳过；请换一个新的 `--output`，或对同一任务追加 `--resume`。
 
 ## 4. 已有动作参数与查看
 

@@ -10,7 +10,7 @@ cd "$WS_DIR"
 # ---- venv（先激活，让 colcon 用 venv python 生成 entry-point shebang） ----
 VENV_DIR="${VENV_DIR:-$WS_DIR/.venv}"
 if [[ ! -r "$VENV_DIR/bin/activate" ]]; then
-  echo "[run_sim] 找不到 $VENV_DIR/bin/activate；请先在仓库根目录运行 ./init_env.sh" >&2
+  echo "[run_sim] 找不到 $VENV_DIR/bin/activate；请在本目录运行 bash init_env.sh" >&2
   exit 1
 fi
 # shellcheck disable=SC1091

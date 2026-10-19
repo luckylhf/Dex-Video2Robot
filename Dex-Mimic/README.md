@@ -111,7 +111,7 @@ RESUME=false LOAD_CKPT=policy/dex/wbt_model_46400.pt \
 | medium | 1024 | 5000 |
 | full | 12000 | 50000 |
 
-`NUM_ENVS`、`MAX_ITER` 覆盖模式预设；按显存选择环境数。最后一个参数是 GPU 数，多卡时总环境数须能被 GPU 数整除。日志和 checkpoint 位于 `logs/rsl_rl/dex_evt_fix/`，终端会打印实际目录；`LOG_ROOT` 可指定其他输出根目录。
+`NUM_ENVS`、`MAX_ITER` 覆盖模式预设；按显存选择环境数。最后一个参数是 GPU 数，多卡时总环境数须能被 GPU 数整除。日志和 checkpoint 位于 `logs/rsl_rl/dex_evt_fix/<时间戳>_<RUN_PREFIX>_<mode>/`：时间戳格式 `MMDD_HHMMSS`，`RUN_PREFIX` 默认 `dex_evt_repair_balance_sim2sim`，例如 `1019_183012_dex_evt_repair_balance_sim2sim_medium`。终端只打印日志根目录，实际子目录用 `ls -t logs/rsl_rl/dex_evt_fix | head -1` 查看；`LOG_ROOT` 可指定其他输出根目录。
 
 站立头可单独微调：
 
@@ -127,18 +127,18 @@ RESUME=false LOAD_CKPT=policy/dex/standing_model_2000.pt \
 
 ```bash
 RESUME=true bash train_dex.sh medium dataset/npz_dex/dance_with_transition.npz \
-  1 ACTUAL_RUN_NAME model_1000.pt
+  1 1019_183012_dex_evt_repair_balance_sim2sim_medium model_1000.pt
 ```
 
 `LOAD_CKPT` 与 `RESUME=true` 互斥。观察训练曲线可运行 `bash log.sh`。
 
 ## 4. 播放与导出
 
-将下面的 `ACTUAL_RUN_NAME/model_N.pt` 替换为训练生成的 checkpoint，并选择匹配的 NPZ：
+将下面的目录名与 checkpoint 换成训练实际产出的（目录名以 `ls -t logs/rsl_rl/dex_evt_fix | head -1` 为准），并选择匹配的 NPZ：
 
 ```bash
 export MOTION_FILE=dataset/npz_dex/dance_with_transition.npz
-export CHECKPOINT_PATH=logs/rsl_rl/dex_evt_fix/ACTUAL_RUN_NAME/model_N.pt
+export CHECKPOINT_PATH=logs/rsl_rl/dex_evt_fix/1019_183012_dex_evt_repair_balance_sim2sim_medium/model_1000.pt
 export STANDING_CHECKPOINT=policy/dex/standing_baseline.pt
 bash play_dex.sh
 ```
