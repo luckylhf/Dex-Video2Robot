@@ -28,8 +28,15 @@ class GeneralMotionRetargeting:
         verbose: bool=False,
         use_velocity_limit: bool=False,
         use_collision_avoidance: bool=True,
-        motion_fps: int=30
+        motion_fps: int=30,
+        ik_recovery: str="strict",
     ) -> None:
+        if ik_recovery not in {"strict", "table-retry"}:
+            raise ValueError(f"Unknown IK recovery mode: {ik_recovery}")
+        self.ik_recovery = ik_recovery
+        self.ik_recovery_events = []
+        self.ik_status_counts = {}
+        self.last_ik_result = None
         self.verbose = verbose
         self.ground_offset = None
         self.lowest_pos = np.inf
@@ -334,6 +341,9 @@ class GeneralMotionRetargeting:
         self.lowest_pos = np.inf
         self._foot_z_correction = None
         self.solve_error_arr = []
+        self.ik_recovery_events = []
+        self.ik_status_counts = {}
+        self.last_ik_result = None
         for task in self.foot_contact_tasks:
             task.reset()
 
@@ -531,21 +541,91 @@ class GeneralMotionRetargeting:
                 robot_foot_xy = self.configuration.data.xpos[task.body_id][:2]
                 task.set_contact_point(robot_foot_xy)
 
+    def _restore_ik_state(self, state):
+        qpos, qvel = state
+        # Refresh FK/Jacobians as well as qpos; assigning qpos alone leaves stale poses.
+        self.configuration.update(q=qpos.copy())
+        self.configuration.data.qvel[:] = qvel
+
+    def _solve_ik_stage(self, name, tasks, ik_dt):
+        """Apply a normal or explicit fallback solution; failed attempts are transactional."""
+        state = (self.configuration.data.qpos.copy(), self.configuration.data.qvel.copy())
+        event = {"table": name, "status": "normal"}
+        attempts = [(self.ik_limits, self.damping)]
+        if self.ik_recovery == "table-retry":
+            attempts.append(([limit for limit in self.ik_limits
+                              if isinstance(limit, mink.ConfigurationLimit)], self.damping * 50))
+            if not attempts[-1][0]:
+                raise ValueError("table-retry requires a joint position ConfigurationLimit")
+        for index, (limits, damping) in enumerate(attempts):
+            try:
+                velocity = mink.solve_ik(self.configuration, tasks, ik_dt, self.solver,
+                                         damping, limits=limits)
+                velocity = np.asarray(velocity)
+                if velocity.shape != (self.model.nv,) or not np.isfinite(velocity).all():
+                    raise ValueError(f"{name}: invalid IK velocity")
+                self.configuration.integrate_inplace(velocity, ik_dt)
+                if not np.isfinite(self.configuration.data.qpos).all():
+                    raise ValueError(f"{name}: nonfinite integrated IK pose")
+                event["status"] = "recovered" if index else "normal"
+                return event
+            except mink.NoSolutionFound as exc:
+                self._restore_ik_state(state)
+                event["retry_error" if index else "normal_error"] = str(exc)
+                if self.ik_recovery == "strict":
+                    raise
+                if index == 0:
+                    event["retry_damping"] = float(self.damping * 50)
+                    event["relaxed_limits"] = [type(limit).__name__ for limit in self.ik_limits
+                                                if not isinstance(limit, mink.ConfigurationLimit)]
+            except Exception:
+                self._restore_ik_state(state)
+                raise
+        event["status"] = "failed"
+        return event
+
     def retarget(self, human_data, offset_to_ground=False,framesIdx=-1):
-        # Update the task targets
-        self.update_targets(human_data, offset_to_ground)
+        frame_state = (self.configuration.data.qpos.copy(), self.configuration.data.qvel.copy())
+        contacts = [(task, task._in_stance,
+                     None if task._contact_xy is None else task._contact_xy.copy())
+                    for task in self.foot_contact_tasks]
+        def restore_frame():
+            self._restore_ik_state(frame_state)
+            for task, in_stance, contact_xy in contacts:
+                task._in_stance = in_stance
+                task._contact_xy = contact_xy
+        try:
+            self.update_targets(human_data, offset_to_ground)
+            self._update_foot_contact_state(self.scaled_human_data)
+            stages = []
+            if self.use_ik_match_table1:
+                stages.append(("table1", self.tasks1 + self.foot_contact_tasks))
+            if self.use_ik_match_table2:
+                tasks = self.tasks2 + ([self.shoulder_posture_task] if self.shoulder_posture_task else [])
+                stages.append(("table2", tasks + self.foot_contact_tasks))
+            active_stage_count = int(bool(self.use_ik_match_table1 and self.tasks1)) + int(bool(self.use_ik_match_table2 and self.tasks2))
+            ik_dt = self.get_ik_dt(active_stage_count)
+            results = [self._solve_ik_stage(name, tasks, ik_dt) for name, tasks in stages]
+        except Exception:
+            restore_frame()
+            raise
 
-        # 更新脚部接触状态：检测 stance/swing 并设置接触点
-        self._update_foot_contact_state(self.scaled_human_data)
-
-        active_stage_count = int(bool(self.use_ik_match_table1 and self.tasks1)) + int(bool(self.use_ik_match_table2 and self.tasks2))
-        ik_dt = self.get_ik_dt(active_stage_count)
-        for enabled, tasks in [(self.use_ik_match_table1, self.tasks1),
-                               (self.use_ik_match_table2, self.tasks2 + ([self.shoulder_posture_task] if self.shoulder_posture_task else []))]:
-            if enabled:
-                vel = mink.solve_ik(self.configuration, tasks + self.foot_contact_tasks,
-                                    ik_dt, self.solver, self.damping, limits=self.ik_limits)
-                self.configuration.integrate_inplace(vel, ik_dt)
+        succeeded = sum(result["status"] != "failed" for result in results)
+        if results and not succeeded:
+            restore_frame()
+            status = "held"
+        elif succeeded < len(results):
+            status = "partial"
+        elif any(result["status"] == "recovered" for result in results):
+            status = "recovered"
+        else:
+            status = "normal"
+        self.last_ik_result = {"frame": framesIdx, "status": status, "stages": results}
+        self.ik_status_counts[status] = self.ik_status_counts.get(status, 0) + 1
+        if status != "normal":
+            self.ik_recovery_events.append(self.last_ik_result)
+            detail = ", ".join(f"{result['table']}={result['status']}" for result in results)
+            print(f"[IK recovery] frame={framesIdx} status={status} {detail}")
 
         qpos = self.configuration.data.qpos.copy()
 

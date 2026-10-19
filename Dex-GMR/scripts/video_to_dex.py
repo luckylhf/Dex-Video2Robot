@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--static-camera', action='store_true', help='Use only with a fixed camera')
     parser.add_argument('--no-velocity-limit', action='store_true')
     parser.add_argument('--no-collision-avoidance', action='store_true')
+    parser.add_argument('--ik-recovery', choices=['strict', 'table-retry'], default='strict')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--mimic-dir', type=Path)
     parser.add_argument('--mimic-python', default=os.environ.get('MIMIC_PYTHON', sys.executable))
@@ -61,6 +62,7 @@ def main():
                     model_sha256=manifest['model_sha256'], output=str(output),
                     static_camera=args.static_camera, no_velocity_limit=args.no_velocity_limit,
                     no_collision_avoidance=args.no_collision_avoidance,
+                    ik_recovery=args.ik_recovery,
                     body_models=str(args.body_models.resolve()))
     state = work / 'pipeline.json'
     if args.resume:
@@ -97,6 +99,7 @@ def main():
             retarget.append('--no-velocity-limit')
         if args.no_collision_avoidance:
             retarget.append('--no-collision-avoidance')
+        retarget.extend(['--ik-recovery', args.ik_recovery])
         subprocess.run(retarget, check=True, env=env)
     if args.mimic_dir:
         mimic = args.mimic_dir.resolve()

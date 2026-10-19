@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def retarget_frames(frames, fps, source, height, output, view=False,
-                    use_velocity_limit=True, use_collision_avoidance=True):
+                    use_velocity_limit=True, use_collision_avoidance=True, ik_recovery="strict"):
     from general_motion_retargeting import GeneralMotionRetargeting
     from general_motion_retargeting.params import ROBOT_XML_DICT
     import mujoco
@@ -28,7 +28,7 @@ def retarget_frames(frames, fps, source, height, output, view=False,
     retarget = GeneralMotionRetargeting(source, 'dex_evt', actual_human_height=height,
                                       use_velocity_limit=use_velocity_limit,
                                       use_collision_avoidance=use_collision_avoidance,
-                                      motion_fps=fps)
+                                      motion_fps=fps, ik_recovery=ik_recovery)
     viewer = None
     if view:
         from general_motion_retargeting import RobotMotionViewer
@@ -47,6 +47,15 @@ def retarget_frames(frames, fps, source, height, output, view=False,
     finally:
         if viewer:
             viewer.close()
+        if ik_recovery != "strict":
+            audit = output.with_suffix('.ik.json')
+            audit.parent.mkdir(parents=True, exist_ok=True)
+            audit.write_text(json.dumps({
+                'mode': ik_recovery, 'requested_frames': len(frames), 'completed_frames': len(qpos),
+                'status_counts': retarget.ik_status_counts, 'events': retarget.ik_recovery_events,
+                'validation': 'IK audit only; check the final NPZ with check_motion.py before training',
+            }, ensure_ascii=False, indent=2) + '\n')
+            print(f'[IK recovery] audit: {audit}; counts={retarget.ik_status_counts}')
     qpos = np.asarray(qpos)
     joint_names = retarget.robot_joint_names
     for col, name in enumerate(joint_names):
@@ -59,6 +68,7 @@ def retarget_frames(frames, fps, source, height, output, view=False,
                      'root_rot': qpos[:, 3:7][:, [1, 2, 3, 0]], 'quat_order': 'xyzw',
                      'dof_pos': qpos[:, 7:], 'joint_names': joint_names,
                      'model_sha256': manifest['model_sha256'], 'robot': manifest['robot'],
+                     'ik_recovery': ik_recovery, 'ik_status_counts': retarget.ik_status_counts,
                      'local_body_pos': None, 'link_body_list': None}, f)
     print(f'Saved {output}: {len(qpos)} frames, {fps:g} fps, {len(joint_names)} joints; model={Path(ROBOT_XML_DICT["dex_evt"]).name}')
     return output
@@ -73,11 +83,16 @@ if __name__ == '__main__':
     parser.add_argument('--bvh-format', choices=['bvh_lafan1', 'bvh_soma'], default='bvh_lafan1')
     parser.add_argument('--view', action='store_true')
     parser.add_argument('--no-velocity-limit', action='store_true',
-                        help='Disable the IK velocity constraint when the QP is infeasible; '
-                             'collision avoidance stays enabled and check_motion still enforces URDF limits')
+                        help='Disable the velocity constraint for the entire IK sequence; '
+                             'collision settings are unchanged for normal solves; '
+                             'table-retry fallback uses position limits only')
     parser.add_argument('--no-collision-avoidance', action='store_true',
-                        help='Disable IK self-collision pairs when the QP is infeasible; '
-                             'the velocity limit stays enabled')
+                        help='Disable collision and ground geometry limits for the entire IK sequence; '
+                             'velocity settings are unchanged for normal solves; '
+                             'table-retry fallback uses position limits only')
+    parser.add_argument('--ik-recovery', choices=['strict', 'table-retry'], default='strict',
+                        help='Explicit per-table fallback: 50x damping and position limits only; '
+                             'both failed tables hold the previous pose; final NPZ checks remain required')
     args = parser.parse_args()
     if args.input.suffix.lower() == '.bvh':
         from general_motion_retargeting.utils.lafan1 import load_lafan1_file, load_soma_file
@@ -106,4 +121,5 @@ if __name__ == '__main__':
         source = 'smplx'
     retarget_frames(frames, fps, source, height, args.output, args.view,
                     use_velocity_limit=not args.no_velocity_limit,
-                    use_collision_avoidance=not args.no_collision_avoidance)
+                    use_collision_avoidance=not args.no_collision_avoidance,
+                    ik_recovery=args.ik_recovery)

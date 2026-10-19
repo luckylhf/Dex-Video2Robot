@@ -68,7 +68,7 @@ export DEX_ROOT="$(pwd)"
 2. 按 [Dex-Mimic 训练与导出](Dex-Mimic/README.md) 加载预制权重训练，选择实际 checkpoint 播放、导出。
 3. 按 [ROS2 仿真与部署](Dex-Mimic/ros_dex_deploy/README.md) 检查默认站立演示，或加载自己打包的新动作。
 
-IK 出现 `NoSolutionFound` 时，见 [IK 无解处理流程](Dex-GMR/README.md#ik-no-solution)。可先显式关闭 IK 避碰、保留速度约束，复用已生成的人体预测重做动作；必须通过 NPZ 后置检查后才继续训练。默认配置不会自动关闭约束。
+日常视频转换使用 `--ik-recovery table-retry`：先完整约束求解，无解再放宽重试。省略该参数时，代码默认是 `strict`（无解就退出）。各模式、约束范围和检查要求见 [IK 模式说明](Dex-GMR/README.md#ik-no-solution)。
 
 各阶段环境独立：
 

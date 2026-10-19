@@ -70,11 +70,12 @@ GVHMR 推理需要 NVIDIA GPU。脚本自动设置 `PYTHONNOUSERSITE=1`，防止
 
 ## 3. MP4 → PKL → NPZ
 
-在 GMR 环境运行。把视频路径替换为自己的 MP4；固定相机时才加 `--static-camera`：
+在 GMR 环境运行。日常转换使用恢复模式 `--ik-recovery table-retry`；各模式和约束见第 5 节。把视频路径替换为自己的 MP4；固定相机时才加 `--static-camera`：
 
 ```bash
 cd "$DEX_ROOT/Dex-GMR"
 bash run_video.sh /path/to/dance.mp4 \
+  --ik-recovery table-retry \
   --static-camera \
   --work-dir /tmp/dex_video_job \
   --output "$DEX_ROOT/Dex-GMR/data/outputs/dance.pkl"
@@ -86,6 +87,7 @@ bash run_video.sh /path/to/dance.mp4 \
 
 ```text
 Dex-GMR/data/outputs/dance.pkl
+Dex-GMR/data/outputs/dance.ik.json
 Dex-Mimic/dataset/npz_dex_raw/dance.npz
 Dex-Mimic/dataset/npz_dex/dance_with_transition.npz
 ```
@@ -98,6 +100,7 @@ Dex-Mimic/dataset/npz_dex/dance_with_transition.npz
 
 ```bash
 bash run_video.sh /path/to/dance.mp4 \
+  --ik-recovery table-retry \
   --static-camera --work-dir /tmp/dex_video_job \
   --output "$DEX_ROOT/Dex-GMR/data/outputs/dance.pkl" --resume
 ```
@@ -110,6 +113,7 @@ bash run_video.sh /path/to/dance.mp4 \
 
 ```bash
 python scripts/retarget_motion.py /path/to/hmr4d_results.pt \
+  --ik-recovery table-retry \
   --output data/outputs/dance.pkl
 python scripts/view_motion.py data/outputs/dance.pkl
 ```
@@ -120,63 +124,97 @@ BVH 通过 `--bvh-format bvh_lafan1` 或 `bvh_soma` 指定约定。PKL 查看是
 
 <a id="ik-no-solution"></a>
 
-## 5. 常见问题：IK 无解（NoSolutionFound）
+## 5. IK：模式、约束与默认用法
 
-出现 `NoSolutionFound: QP solver daqp failed to find a solution`，表示当前 IK 求解未找到可行解。单凭异常不能确定是动作异常、约束冲突还是数值问题。先检查失败位置附近的人体预测、机器人模型和 IK 配置；保留日志及已生成的 `hmr4d_results.pt`，不必重新跑 GVHMR。
+### 默认用哪个？
 
-**建议先显式关闭 IK 避碰，保留关节位置和速度约束，再执行动作数据检查。** 两个关闭开关 `--no-collision-avoidance`、`--no-velocity-limit` 默认均不启用；默认求解失败会直接退出，不会自动关约束或静默降级。
+**日常转换用恢复模式：`--ik-recovery table-retry`。** 第 3、4 节的命令已经带上它。先保留全部约束，某个阶段无解时才放宽重试。
 
-### 已有 GVHMR 预测：直接从 IK 重跑
+**如果命令里不写 `--ik-recovery`，代码默认是 `strict`。** 因此复制命令或续跑时，请保留 `--ik-recovery table-retry`。
 
-以下接续第 3 节的 `/tmp/dex_video_job`，写入一个新的 PKL，保留原始失败任务和产物：
+### 有哪些模式？
+
+程序有两种恢复模式：`table-retry` 和 `strict`。另外两个关闭开关用于选择约束，常见组合如下：
+
+| 用法 | 参数 | 正常求解时的硬约束 | 无解后怎么处理 |
+| --- | --- | --- | --- |
+| **恢复模式（日常使用）** | `--ik-recovery table-retry` | 关节位置、速度、避碰、地面 | 当前 table 重试一次，只保留关节位置 |
+| 严格模式 | `--ik-recovery strict` | 关节位置、速度、避碰、地面 | 报错退出 |
+| 严格模式，关闭避碰 | `--ik-recovery strict --no-collision-avoidance` | 关节位置、速度 | 报错退出 |
+| 严格模式，关闭速度限制 | `--ik-recovery strict --no-velocity-limit` | 关节位置、避碰、地面 | 报错退出 |
+| 严格模式，同时关闭两者 | `--ik-recovery strict --no-collision-avoidance --no-velocity-limit` | 仅关节位置 | 报错退出；用于诊断 |
+
+两个关闭开关对**整段动作**生效，也可以与恢复模式组合。例如 `--ik-recovery table-retry --no-collision-avoidance`：正常求解保留位置和速度，无解重试只保留位置。**需要始终保留速度约束时，用 `strict`，且不加 `--no-velocity-limit`。**
+
+### 每种约束管到哪里？
+
+| 约束 | 限制范围 | 什么时候会关闭？ |
+| --- | --- | --- |
+| 关节位置 | 模型中有关节限位的轴，限制在各自角度范围内；输出 PKL 前再按 URDF 限位检查 | 所有上述模式都保留，无关闭开关 |
+| 关节速度 | 当前 Dex 按 URDF 各轴最大速度的 **70%** 限制 IK 关节速度；不限制根节点整体平移、转动速度 | 加 `--no-velocity-limit` 时整段关闭；恢复模式的重试阶段也关闭 |
+| 自碰撞 | 只约束 [避碰配置](general_motion_retargeting/collision_config.py) 中列出的几何对，不覆盖任意身体部位之间的碰撞 | 加 `--no-collision-avoidance` 时整段关闭；恢复模式的重试阶段也关闭 |
+| 地面 | 配置中脚部几何体靠近地面时限制其向下运动；当前地面高度为 0，余量为 7.5 mm | 与避碰一起关闭，规则同上一行 |
+
+人体姿态匹配、肩部姿态和启用的脚部接触任务是**尽量满足的目标**，不是必须精确达到的硬约束；恢复重试仍保留这些目标。关闭地面硬约束后，原有落地补偿仍执行。这里的开关只影响 IK，后续物理仿真仍使用原模型的碰撞设置。
+
+### 恢复模式具体怎么走？
+
+每帧按顺序执行 table1、table2（两组姿态匹配任务）：
+
+1. 当前 table 先按所选约束正常求解。
+2. 仅当求解器报 `NoSolutionFound` 时重试一次：阻尼由 0.5 增至 25，硬约束只保留关节位置。
+3. 正常解或重试解成功后，都立即积分更新姿态；当前 table 两次都失败，则恢复该 table 开始时的状态，继续下一个 table。
+4. 一个 table 成功就保留其结果；两个都失败则保持本帧开始时的姿态。该帧仍保留，不删帧、不缩短动作时间。
+
+其他程序错误、NaN 或 Inf 直接报错退出，不进入恢复。
+
+PKL 旁边的 `动作名.ik.json` 记录恢复位置和原因。帧状态含义：
+
+| 状态 | 含义 |
+| --- | --- |
+| `normal` | 所有启用的 table 都正常成功 |
+| `recovered` | 所有启用的 table 都成功，至少一个用了重试解 |
+| `partial` | 部分 table 失败，保留成功部分的结果 |
+| `held` | 所有启用的 table 都失败，保持本帧开始姿态 |
+
+### 已有预测怎么重跑？
+
+不用重新跑 GVHMR，直接复用 `hmr4d_results.pt`，选择一个新的输出名：
 
 ```bash
 cd "$DEX_ROOT/Dex-GMR"
 python scripts/retarget_motion.py \
   /tmp/dex_video_job/human/source_30fps/hmr4d_results.pt \
   --body-models "${SMPLX_MODEL_DIR:-$DEX_ROOT/Dex-GMR/assets/body_models}" \
-  --no-collision-avoidance \
-  --output data/outputs/dance_no_collision.pkl
+  --ik-recovery table-retry \
+  --output data/outputs/dance_retry.pkl
 ```
 
-然后转换并检查新动作。离线解释器沿用前面配置的 `MIMIC_PYTHON`，未设置时使用当前 `python`：
+要做约束对照，把上面的模式参数换成表中对应组合，同时更换输出名。`NoSolutionFound` 只说明这次求解没找到解，不能仅凭异常判断是哪条约束冲突；对照时使用同一份人体预测。
+
+**更换模式或关闭开关后，不要在旧任务上直接加 `--resume`。** 复用人体预测时按上面重跑 IK；从 MP4 重跑时换新的 `--work-dir` 和输出名。只有参数一致的原任务才能续跑。
+
+### 解出来后，还检查什么？
+
+**IK 完成不等于动作合格。** 恢复阶段没有速度、避碰和地面硬约束，必须检查最终带过渡的 NPZ：
 
 ```bash
 cd "$DEX_ROOT/Dex-Mimic"
 "${MIMIC_PYTHON:-python}" scripts/pkl_to_npz.py \
-  --input_file "$DEX_ROOT/Dex-GMR/data/outputs/dance_no_collision.pkl" \
+  --input_file "$DEX_ROOT/Dex-GMR/data/outputs/dance_retry.pkl" \
   --robot dex_evt \
-  --output_name dataset/npz_dex_raw/dance_no_collision \
+  --output_name dataset/npz_dex_raw/dance_retry \
   --output_dir dataset/npz_dex \
   --add_transition --recompute_velocities && \
 "${MIMIC_PYTHON:-python}" scripts/check_motion.py \
-  dataset/npz_dex/dance_no_collision_with_transition.npz
+  dataset/npz_dex/dance_retry_with_transition.npz
 ```
 
-**只有 `check_motion.py` 成功退出后，才继续训练。** 转换器可能已写出 NPZ，而后置检查才发现超限；文件存在不代表检查通过。训练时显式选择 `dataset/npz_dex/dance_no_collision_with_transition.npz`，避免把未通过检查的诊断动作混入训练目录。
+`run_video.sh` 会自动执行转换和后置检查；直接调用 `retarget_motion.py` 时，需手动执行上面的命令。
 
-`check_motion.py` 校验模型、名称、帧率、数值、四元数、URDF 关节位置与速度，以及抽样 FK；它不检查自碰撞。回放参考动作时仍需检查身体穿插、脚底和轨迹漂移，再分别验证 Isaac / MuJoCo 策略表现。
-
-该开关关闭整个 IK 避碰分支，包括几何避碰和地面几何高度约束。关节位置、速度约束仍保留；落地补偿和 NPZ 过渡处理仍执行。后续物理仿真沿用原模型的碰撞设置。
-
-### 从 MP4 重新启动：使用新的任务目录
-
-也可以把显式开关交给视频入口，由它自动完成 IK、转换与后置检查。下面是复用预测方案的替代入口；工作目录和输出名均使用新路径，固定相机素材才额外添加 `--static-camera`：
-
-```bash
-cd "$DEX_ROOT/Dex-GMR"
-bash run_video.sh /path/to/dance.mp4 \
-  --no-collision-avoidance \
-  --work-dir /tmp/dex_video_job_no_collision \
-  --output "$DEX_ROOT/Dex-GMR/data/outputs/dance_no_collision_video.pkl"
-```
-
-**改变 IK 开关后，不能在原任务上直接追加 `--resume`。** 续跑会核对 IK 配置并拒绝不一致的参数；需要复用人体预测时，使用上面的 `retarget_motion.py` 入口并选择新输出。新任务后续若中断，才使用它自己的相同参数、工作目录和输出加 `--resume`，不要手工修改 `pipeline.json` 绕过核对。
-
-### 进一步排查
-
-如果关闭避碰仍无解，可将 `--no-collision-avoidance` **替换为** `--no-velocity-limit`，用独立的新输出做速度约束对照；关闭速度约束更容易得到超限动作，仍须执行同样的 NPZ 后置检查。若只有同时关闭两者才能求解，先将结果作为诊断数据，检查人体轨迹、模型与约束配置，并裁段、降速或修正预测，再重新检查。
-
-关节位置或速度超限时，应修正参考动作并重新生成，不要通过修改 URDF 限位或放宽检查器阈值让数据过关。参考动作检查通过后，还需训练策略并检查物理仿真中的跟踪效果、平衡和起止切换。
+- **检查通过才训练。** NPZ 文件存在不代表检查通过；训练时显式选择通过检查的文件。
+- 检查器校验模型、名称、帧率、数值、四元数、URDF 关节位置与速度，以及抽样 FK。最终速度按 **URDF 限位**检查，不是 IK 使用的 70%。
+- 检查器**不检查自碰撞、平衡或跟踪效果**。回放时看身体穿插、脚底、漂移，以及 `partial` / `held` 帧；策略效果再到 Isaac / MuJoCo 中验证。
+- 位置或速度超限时，修正动作、降速或裁段后重新生成，不修改 URDF 或检查器阈值来过关。
 
 模型与 39/30 body、四元数等接口约定见 [模型说明](../docs/model_and_dynamics.md)。
