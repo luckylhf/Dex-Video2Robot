@@ -5,6 +5,7 @@
     "human_height_assumption": 1.8,
     "use_ik_match_table1": true,
     "use_ik_match_table2": true,
+    "shoulder_posture_scale": 0.1,
     "human_scale_table": {
         "pelvis": 0.9,
         "spine3": 0.9,
@@ -28,7 +29,7 @@
         "pelvis": [
             "pelvis",
             0,
-            1,
+            5,
             [
                 0.0,
                 0.0,
@@ -140,7 +141,7 @@
         "waist_pitch_link": [
             "spine3",
             0,
-            1,
+            5,
             [
                 0.0,
                 0.0,
@@ -254,7 +255,7 @@
         "pelvis": [
             "pelvis",
             1,
-            0.5,
+            5,
             [
                 0.0,
                 0.0,
@@ -367,7 +368,7 @@
         "waist_pitch_link": [
             "spine3",
             1,
-            0.5,
+            5,
             [
                 0.0,
                 0.0,

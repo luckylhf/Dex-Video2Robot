@@ -25,6 +25,7 @@ class GeomDistanceLimit(Limit):
         self.bound_relaxation = bound_relaxation
         self.debug_pairs = {frozenset(pair) for pair in (debug_pairs or [])}
         self.geom_pairs = self._resolve_geom_pairs(geom_pairs)
+        self.distance_fallback_count = 0
 
     def _resolve_geom_pairs(self, geom_pairs):
         resolved = []
@@ -92,6 +93,82 @@ class GeomDistanceLimit(Limit):
             p1, p2 = self._geom_centers(data, geom1, geom2)
         return float(dist), p1, p2
 
+    @staticmethod
+    def _support_point(model, data, geom_id, direction):
+        """World point maximizing dot(point, direction) on a convex geom."""
+        rotation = data.geom_xmat[geom_id].reshape(3, 3)
+        local = rotation.T @ direction
+        size = model.geom_size[geom_id]
+        kind = model.geom_type[geom_id]
+        if kind == mj.mjtGeom.mjGEOM_MESH:
+            mesh_id = model.geom_dataid[geom_id]
+            start, count = model.mesh_vertadr[mesh_id], model.mesh_vertnum[mesh_id]
+            vertices = model.mesh_vert[start:start + count]
+            point = vertices[np.argmax(vertices @ local)]
+        elif kind == mj.mjtGeom.mjGEOM_CYLINDER:
+            point = np.array([0., 0., np.copysign(size[1], local[2])])
+            norm = np.linalg.norm(local[:2])
+            if norm > 1e-12:
+                point[:2] = size[0] * local[:2] / norm
+        elif kind == mj.mjtGeom.mjGEOM_SPHERE:
+            point = size[0] * local / np.linalg.norm(local)
+        elif kind == mj.mjtGeom.mjGEOM_BOX:
+            point = size * np.sign(local)
+        elif kind == mj.mjtGeom.mjGEOM_CAPSULE:
+            point = size[0] * local / np.linalg.norm(local)
+            point[2] += np.copysign(size[1], local[2])
+        elif kind == mj.mjtGeom.mjGEOM_ELLIPSOID:
+            point = size**2 * local / np.linalg.norm(size * local)
+        else:
+            raise ValueError(f"Unsupported geom type for separation certificate: {kind}")
+        return data.geom_xpos[geom_id] + rotation @ point
+
+    def _distance_with_normal(self, model, data, geom1, geom2, distmax):
+        dist, p1, p2 = self._geom_distance(model, data, geom1, geom2, distmax)
+        if dist >= distmax:
+            return dist, p1, p2, np.zeros(3)
+        direction = p2 - p1
+        norm = np.linalg.norm(direction)
+        tolerance = max(1e-6, 10 * model.opt.ccd_tolerance)
+        if not np.isfinite(dist) or not np.isfinite(norm):
+            raise ValueError("Nonfinite collision distance or witness points")
+        if abs(norm - abs(dist)) > tolerance:
+            # Some native-CCD mesh queries return zero with widely separated
+            # witnesses (MuJoCo issue #3383). Their segment length is NOT a
+            # reliable replacement distance. Instead certify a separating plane
+            # using support points; its gap is a conservative distance lower bound.
+            centers = data.geom_xpos[geom2] - data.geom_xpos[geom1]
+            directions = [direction, centers, *np.eye(3),
+                          *data.geom_xmat[geom1].reshape(3, 3).T,
+                          *data.geom_xmat[geom2].reshape(3, 3).T]
+            best = None
+            for normal in directions:
+                length = np.linalg.norm(normal)
+                if length < 1e-12:
+                    continue
+                normal = normal / length
+                if normal @ centers < 0:
+                    normal = -normal
+                a = self._support_point(model, data, geom1, normal)
+                b = self._support_point(model, data, geom2, -normal)
+                gap = float(normal @ (b - a))
+                if best is None or gap > best[0]:
+                    best = gap, a, b, normal
+            if best is None or best[0] <= tolerance:
+                names = [mj.mj_id2name(model, mj.mjtObj.mjOBJ_GEOM, g) for g in (geom1, geom2)]
+                raise ValueError(f"Inconsistent collision distance without a separation certificate: {names}")
+            self.distance_fallback_count += 1
+            return best
+        if norm < 1e-9:
+            p1, p2 = self._geom_centers(data, geom1, geom2)
+            direction = p2 - p1
+            norm = np.linalg.norm(direction)
+        if norm < 1e-9:
+            return dist, p1, p2, np.zeros(3)
+        # Penetrating witnesses point opposite to the signed-distance gradient.
+        normal = direction / norm * (-1.0 if dist < 0 else 1.0)
+        return dist, p1, p2, normal
+
     def _point_jacobian(self, model, data, body_id, point):
         jacp = np.zeros((3, model.nv), dtype=float)
         jacr = np.zeros((3, model.nv), dtype=float)
@@ -122,14 +199,14 @@ class GeomDistanceLimit(Limit):
             best = None
             for geom1 in ids_a:
                 for geom2 in ids_b:
-                    dist, p1, p2 = self._geom_distance(model, data, geom1, geom2, dist_max)
+                    dist, p1, p2, direction = self._distance_with_normal(model, data, geom1, geom2, dist_max)
                     if best is None or dist < best[0]:
-                        best = (dist, p1, p2, geom1, geom2)
+                        best = (dist, p1, p2, direction, geom1, geom2)
 
             if best is None:
                 continue
 
-            dist, p1, p2, geom1, geom2 = best
+            dist, p1, p2, direction, geom1, geom2 = best
             if dist >= dist_max:
                 continue
             # Debug print for selected pairs.
@@ -138,15 +215,8 @@ class GeomDistanceLimit(Limit):
                     if frozenset((na, nb)) in self.debug_pairs:
                         print(f"[GMR][geom_dist] {na} vs {nb}: {dist:.4f} m")
 
-            direction = p2 - p1
-            norm = np.linalg.norm(direction)
-            if norm < 1e-9:
-                p1, p2 = self._geom_centers(data, geom1, geom2)
-                direction = p2 - p1
-                norm = np.linalg.norm(direction)
-                if norm < 1e-9:
-                    continue
-            direction /= norm
+            if np.linalg.norm(direction) < 1e-9:
+                continue
 
             body1 = model.geom_bodyid[geom1]
             body2 = model.geom_bodyid[geom2]
@@ -172,7 +242,9 @@ class FootGroundContactLimit(Limit):
     使用足部几何体的实际接触点
     """
     
-    def __init__(self, model, foot_geom_names, min_height=0.0, margin=0.0075, gain=1.5):
+    def __init__(self, model, foot_geom_names, min_height=0.0, margin=0.0075, gain=0.85):
+        if not np.isfinite(gain) or not 0 < gain <= 1:
+            raise ValueError("Ground constraint gain must be in (0, 1]")
         self.model = model
         self.foot_geom_names = foot_geom_names if isinstance(foot_geom_names, list) else [foot_geom_names]
         self.min_height = min_height
@@ -243,6 +315,22 @@ class FootGroundContactLimit(Limit):
         rbound = float(model.geom_rbound[geom_id]) if model.geom_rbound[geom_id] > 0 else 0.0
         return center[2] - rbound, np.array([0.0, 0.0, -rbound])
 
+    def _support_offsets(self, model, data, geom_id):
+        """Keep both cylinder ends active across the horizontal-pose cusp."""
+        rotation = data.geom_xmat[geom_id].reshape(3, 3)
+        size = model.geom_size[geom_id]
+        if model.geom_type[geom_id] == mj.mjtGeom.mjGEOM_CYLINDER:
+            axis = rotation[:, 2]
+            down = np.array([0., 0., -1.])
+            radial = down - (down @ axis) * axis
+            norm = np.linalg.norm(radial)
+            radial = size[0] * radial / norm if norm > 1e-12 else np.zeros(3)
+            return [radial + size[1] * axis, radial - size[1] * axis]
+        if model.geom_type[geom_id] == mj.mjtGeom.mjGEOM_BOX:
+            return [rotation @ (size * np.array([a, b, c]))
+                    for a in (-1, 1) for b in (-1, 1) for c in (-1, 1)]
+        return [self._lowest_point(model, data, geom_id)[1]]
+
     def compute_qp_inequalities(self, configuration, dt):
         model = configuration.model
         data = configuration.data
@@ -252,34 +340,18 @@ class FootGroundContactLimit(Limit):
         h_rows = []
 
         for idx, geom_id in enumerate(self.geom_ids):
-            current_z, world_offset = self._lowest_point(model, data, geom_id)
-            # legacy hack carried over from the original implementation
-            if self.foot_geom_names[idx] == "pelvis_collision":
-                current_z -= 0.075
-
-            if current_z > self.min_height + self.margin:
-                continue
-
-            jacp = np.zeros((3, nv))
-            jacr = np.zeros((3, nv))
-            # v_point = v_center + omega x offset = v_center - [offset]_x omega.
-            mj.mj_jacGeom(model, data, jacp, jacr, geom_id)
-            ox, oy, oz = world_offset
-            # cross-product matrix [offset]_x acting on rotational Jacobian
-            jacp_pt = jacp - np.array([
-                [ 0.0, -oz,  oy],
-                [ oz,  0.0, -ox],
-                [-oy,  ox,  0.0],
-            ]) @ jacr
-
-            Jz = jacp_pt[2:3, :]
-
-            effective_min = self.min_height + self.margin
-            G = -Jz
-            h = self.gain * (current_z - effective_min)
-
-            G_rows.append(G)
-            h_rows.append(h)
+            for offset in self._support_offsets(model, data, geom_id):
+                point = data.geom_xpos[geom_id] + offset
+                current_z = point[2]
+                if self.foot_geom_names[idx] == "pelvis_collision":
+                    current_z -= 0.075
+                jacp = np.zeros((3, nv))
+                mj.mj_jac(model, data, jacp, None, point, model.geom_bodyid[geom_id])
+                # Mink solves for displacement, not velocity. Keep the bound
+                # continuous above the margin too, so a downward step cannot
+                # cross the floor before the constraint switches on.
+                G_rows.append(-jacp[2])
+                h_rows.append(self.gain * (current_z - self.min_height - self.margin))
             
         if not G_rows:
             return Constraint(np.zeros((0, nv)), np.zeros((0,)))

@@ -60,6 +60,8 @@ def main():
         parser.error('MJCF differs from model.json; rebuild the model first')
     identity = dict(video_sha256=hashlib.sha256(video.read_bytes()).hexdigest(),
                     model_sha256=manifest['model_sha256'], output=str(output),
+                    ik_config_sha256=hashlib.sha256((ROOT / 'general_motion_retargeting/ik_configs/smplx_todex_v3.json').read_bytes()).hexdigest(),
+                    ik_constraints_sha256=hashlib.sha256((ROOT / 'general_motion_retargeting/geom_distance_limit.py').read_bytes()).hexdigest(),
                     static_camera=args.static_camera, no_velocity_limit=args.no_velocity_limit,
                     no_collision_avoidance=args.no_collision_avoidance,
                     ik_recovery=args.ik_recovery,

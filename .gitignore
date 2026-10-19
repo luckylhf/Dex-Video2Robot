@@ -82,6 +82,7 @@ Dex-Mimic/dataset/npz_dex_raw/*
 *.usda
 *.usdc
 MUJOCO_LOG.TXT
+MJDATA.TXT
 *.back
 *.bak
 *.orig

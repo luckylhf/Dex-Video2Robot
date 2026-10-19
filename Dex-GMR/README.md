@@ -120,6 +120,14 @@ python scripts/view_motion.py data/outputs/dance.pkl
 
 BVH 通过 `--bvh-format bvh_lafan1` 或 `bvh_soma` 指定约定。PKL 查看是运动学显示，不代表物理控制策略已通过。
 
+需要循环查看时使用 `python scripts/view_motion.py /path/to/motion.pkl --loop`，关闭窗口即可结束。
+
+当前 SMPL-X 配置包含躯干修复 v1：两张 IK 表的骨盆、躯干朝向权重均为 5，继续跟踪 `spine3`；配置中的 `shoulder_posture_scale=0.1` 将肩肘回零权重缩小到原来的十分之一，减少抬手时的骨盆和腰部代偿。该比例只作用于当前源配置，未指定时默认 1，BVH 配置保持原行为。PKL 记录 IK 配置哈希和实际比例。
+
+修改 IK 配置后，请复用人体预测生成新的 PKL；视频流水线会检查配置哈希，拒绝使用旧配置缓存继续 `--resume`。GBTC 的躯干修复已做运动学验证，上肢位置和落地误差仍需单独检查。
+
+几何约束修复 v2 保留上述躯干参数，并修正两类腿部抖动来源：碰撞距离与返回点矛盾时，使用凸几何支撑点证明分离并给出保守间距，无法证明时明确报错；圆柱足底同时约束两端、地面边界连续生效，避免最低点切换造成来回修正。PKL 的 `geometry_distance_fallbacks` 记录距离修正次数。视频续跑同时检查几何约束代码哈希，升级后需要重新生成 PKL。
+
 如果视频人物过小、遮挡、机位移动或轨迹漂移明显，先裁段、改善素材或检查人体轨迹。IK 出现 `NoSolutionFound` 时，按下面的流程排查。
 
 <a id="ik-no-solution"></a>

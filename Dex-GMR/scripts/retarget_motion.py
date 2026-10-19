@@ -69,6 +69,10 @@ def retarget_frames(frames, fps, source, height, output, view=False,
                      'dof_pos': qpos[:, 7:], 'joint_names': joint_names,
                      'model_sha256': manifest['model_sha256'], 'robot': manifest['robot'],
                      'ik_recovery': ik_recovery, 'ik_status_counts': retarget.ik_status_counts,
+                     'ik_config_sha256': retarget.ik_config_sha256,
+                     'shoulder_posture_scale': retarget.shoulder_posture_scale,
+                     'geometry_distance_fallbacks': sum(getattr(limit, 'distance_fallback_count', 0)
+                                                        for limit in retarget.ik_limits),
                      'local_body_pos': None, 'link_body_list': None}, f)
     print(f'Saved {output}: {len(qpos)} frames, {fps:g} fps, {len(joint_names)} joints; model={Path(ROBOT_XML_DICT["dex_evt"]).name}')
     return output

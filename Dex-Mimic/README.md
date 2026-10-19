@@ -53,6 +53,35 @@ python scripts/check_motion.py dataset/npz_dex/dance_with_transition.npz
 bash replay.sh --npz-dir dataset/npz_dex
 ```
 
+带过渡段的可调参数都在 `scripts/pkl_to_npz.py` / `scripts/csv_to_npz_mujoco.py`（默认值）：
+
+| 参数 | 默认 | 含义 |
+|---|---|---|
+| `--hold_duration` | `1.0` s | 开头站立保持（先站着） |
+| `--trans_duration` | `1.0` s | 开头站立 → 动作起始的平滑过渡（五次曲线） |
+| `--tail_trans_duration` | `2.5` s | 动作末尾 → 站立的平滑过渡 |
+| `--tail_hold_duration` | `1.0` s | 结尾站立保持（收尾再站着） |
+| `--stand_height` | `0.87` m | 站立姿态的根高（pelvis 高度） |
+| `--head_skip_frames` | `-1` | 开头裁帧数；`-1` 表示按速度阈值自动裁 |
+| `--tail_skip_frames` | `-1` | 结尾裁帧数；`-1` 表示按速度阈值自动裁 |
+| `--skip_threshold` | `1.5` rad/s | 自动裁帧的关节速度阈值（低于它视为"还没开始动"） |
+
+> 默认的 1+1+2.5+1.0 s 会让带过渡 NPZ 比 raw NPZ 多 5.5 s（共 275 帧 @50 fps）。调短会让训练数据更紧凑但可能影响起止稳定性。
+
+示例：从单个 PKL 重转，缩短过渡段：
+
+```bash
+cd "$DEX_ROOT/Dex-Mimic"
+python scripts/pkl_to_npz.py \
+  --input_file "$DEX_ROOT/Dex-GMR/data/outputs/dance.pkl" \
+  --robot dex_evt \
+  --output_name dataset/npz_dex_raw/dance \
+  --output_dir dataset/npz_dex \
+  --add_transition --recompute_velocities \
+  --hold_duration 0.5 --trans_duration 1.0 \
+  --tail_trans_duration 2.0 --tail_hold_duration 0.5
+```
+
 `replay.sh` 只回放参考轨迹，不运行策略。训练前检查动作方向、关节范围、脚底、轨迹漂移和起止过渡。新动作数据通过 GMR 生成。
 
 如果 GMR 阶段报 `NoSolutionFound`，按 [IK 无解处理流程](../Dex-GMR/README.md#ik-no-solution) 排查：优先显式使用 `--no-collision-avoidance` 保留速度约束，复用人体预测重新生成动作，再执行 `check_motion.py`。只有检查成功退出后才训练；生成了 NPZ 文件不代表已通过检查。该检查覆盖关节位置、速度与 FK 等数据约定，不检查自碰撞，仍需回放参考并验证物理策略。

@@ -3,6 +3,7 @@ import mink
 import mujoco as mj
 import numpy as np
 import json
+import hashlib
 import time
 from scipy.spatial.transform import Rotation as R
 import xml.etree.ElementTree as ET
@@ -84,7 +85,14 @@ class GeneralMotionRetargeting:
                 print(f"Motor ID {i}: {motor_name}")
         # Load the IK config
         with open(IK_CONFIG_DICT[src_human][tgt_robot]) as f:
-            ik_config = json.load(f)
+            config_text = f.read()
+        ik_config = json.loads(config_text)
+        self.ik_config_sha256 = hashlib.sha256(config_text.encode()).hexdigest()
+        # Source-specific regularization lets SMPL-X overhead arm targets
+        # overcome the neutral shoulder/elbow posture without changing BVH.
+        self.shoulder_posture_scale = float(ik_config.get("shoulder_posture_scale", 1.0))
+        if not np.isfinite(self.shoulder_posture_scale) or self.shoulder_posture_scale < 0:
+            raise ValueError("shoulder_posture_scale must be finite and nonnegative")
         if verbose:
             print("Use IK config: ", IK_CONFIG_DICT[src_human][tgt_robot])
         
@@ -205,6 +213,7 @@ class GeneralMotionRetargeting:
                 jid = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_JOINT, jname)
                 if jid >= 0:
                     cost_array[self.model.jnt_dofadr[jid]] = cost
+            cost_array *= self.shoulder_posture_scale
             if cost_array.any():
                 self.shoulder_posture_task = mink.PostureTask(self.model, cost=cost_array)
                 self.shoulder_posture_task.set_target(self.model.qpos0.copy())

@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('motion', type=Path)
+    parser.add_argument('--loop', action='store_true', help='Repeat until the viewer window is closed')
     args = parser.parse_args()
     from general_motion_retargeting import RobotMotionViewer
     from general_motion_retargeting.data_loader import load_robot_motion
@@ -18,7 +19,12 @@ if __name__ == '__main__':
         raise ValueError('Motion belongs to a different robot model')
     viewer = RobotMotionViewer(robot_type='dex_evt', motion_fps=fps)
     try:
-        for p, q, j in zip(pos, quat, joints):
-            viewer.step(root_pos=p, root_rot=q, dof_pos=j, rate_limit=True)
+        while viewer.viewer.is_running():
+            for p, q, j in zip(pos, quat, joints):
+                if not viewer.viewer.is_running():
+                    break
+                viewer.step(root_pos=p, root_rot=q, dof_pos=j, rate_limit=True)
+            if not args.loop:
+                break
     finally:
         viewer.close()

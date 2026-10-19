@@ -98,7 +98,35 @@ class FootGeometryTest(unittest.TestCase):
                 distances.append(mujoco.mj_geomDistance(model, data, model.geom('sole').id,
                     model.geom('floor').id, 10., np.zeros(6)))
             numerical.append((distances[1] - distances[0]) / 2e-6)
-        np.testing.assert_allclose(-constraint.G[0], numerical, atol=1e-7)
+        # The ground limit now covers both cylinder ends; compare the lowest.
+        np.testing.assert_allclose(-constraint.G[np.argmin(constraint.h)], numerical, atol=1e-7)
+
+    def test_flat_cylinder_blocks_tipping_into_floor_in_either_direction(self):
+        model = mujoco.MjModel.from_xml_string('''<mujoco><worldbody>
+          <body pos="0 0 .0195"><freejoint/>
+            <geom name="sole" type="cylinder" size=".012 .12" euler="0 90 0"/>
+          </body></worldbody></mujoco>''')
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        limit = FootGroundContactLimit(model, ['sole'])
+        c = limit.compute_qp_inequalities(SimpleNamespace(model=model, data=data), .02)
+        for sign in [-1, 1]:
+            delta = np.zeros(model.nv)
+            delta[4] = sign * .01
+            self.assertGreater(np.max(c.G @ delta - c.h), .001)
+
+    def test_ground_constraint_prevents_crossing_margin_from_above(self):
+        model = mujoco.MjModel.from_xml_string('''<mujoco><worldbody>
+          <body pos="0 0 .02"><freejoint/>
+            <geom name="sole" type="sphere" size=".01"/>
+          </body></worldbody></mujoco>''')
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        c = FootGroundContactLimit(model, ['sole']).compute_qp_inequalities(
+            SimpleNamespace(model=model, data=data), .02)
+        delta = np.zeros(model.nv)
+        delta[2] = -.01
+        self.assertGreater(np.max(c.G @ delta - c.h), 0)
 
 
 if __name__ == '__main__':
