@@ -3,6 +3,7 @@ Joystick Control Module
 Python equivalent of the C++ Joystick functionality for ROS Joy messages
 """
 import os
+import time
 import yaml
 import threading
 from dataclasses import dataclass
@@ -82,8 +83,8 @@ class JoystickHumanoid:
         # 加载配置文件
         self._load_config(config_path)
         self._last_b = -1.0        # 追踪 B 按钮上一个值（初始 -1.0 = 未按）
-        self._a_hold_count = 0     # E上拨 + A 长按计数
-        self._long_press_thr = 30  # 约 300 ms（100 Hz 控制频率）
+        self._a_press_t = None     # A 按下起始时刻；长按按时间判定，与 /sbus_data 频率解耦
+        self._long_press_time = 0.3  # 秒；与 mujoco_node 的脱绳判定保持同一阈值
 
     def _load_config(self, config_path: str = ''):
         """加载YAML配置文件"""
@@ -178,32 +179,33 @@ class JoystickHumanoid:
                         self.joy_flag.fsm_state_command = "gotoZERO"
                     elif self.joy_map.a == 1.0 and self.joy_flag.fsm_state_command == "gotoZERO":
                         self.joy_flag.fsm_state_command = "gotoWALKAMP"
-                    self._a_hold_count = 0
+                    self._a_press_t = None
                     # 获取walk速度命令
                     self.get_x_y_yaw_speed_command()
                     # 获取高度命令
                     self.get_walk_height_command()
                 if button_pressed_nums == 1:
                     if self.joy_map.f == 1.0:
-                        #F下拨 + 长按A → gotoMIMIC
+                        #F下拨 + 长按A → gotoMIMIC（按时间判定，不再依赖消息条数）
                         if self.joy_map.a == 1.0:
-                            self._a_hold_count += 1
-                            if self._a_hold_count >= self._long_press_thr:
+                            if self._a_press_t is None:
+                                self._a_press_t = time.perf_counter()
+                            if time.perf_counter() - self._a_press_t >= self._long_press_time:
                                 self.joy_flag.fsm_state_command = "gotoMIMIC"
                         else:
-                            self._a_hold_count = 0
+                            self._a_press_t = None
                         #F下拨 + D → gotoMIMICDEFAULT
                         if self.joy_map.d == 1.0:
                             self.joy_flag.fsm_state_command = "gotoMIMICDEFAULT"
                     elif self.joy_map.e == 1.0:
                         #e下拨
-                        self._a_hold_count = 0
+                        self._a_press_t = None
                         if self.joy_map.d == 1.0:
                             self.joy_flag.fsm_state_command = "gotoBEYONDZERO"
                         elif self.joy_map.a == 1.0:
                             self.joy_flag.fsm_state_command = "gotoBEYONDMIMIC"
                     else:
-                        self._a_hold_count = 0
+                        self._a_press_t = None
 
     def get_joy_flag(self) -> ControlFlag:
         """获取当前手柄标志"""

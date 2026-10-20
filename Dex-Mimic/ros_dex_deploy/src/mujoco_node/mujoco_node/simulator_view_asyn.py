@@ -222,6 +222,7 @@ class RobotSimulator:
         self.trigger_reset = False
         self.pre_key = None
         self.last_d_pressed = False
+        self._a_press_t = None
         self.cmd_vel_x = 0.0
         self.cmd_vel_y = 0.0
         self.cmd_turn = 0.0
@@ -719,13 +720,21 @@ class RobotSimulator:
             self.cmd_vel_y = axes[3]
             self.cmd_turn = axes[1]
 
-        # A 键：axes[8] 按下即触发 simulation_started
+        # A 键：按住 0.3 s 才释放弹性带，与 rl_control 的 A 长按判定同步。
+        # 若选中即脱绳，rl_control 还停在 MIMICDEFAULT（纯 PD），机器人会直挺挺倒下。
         a_pressed = n > 8 and axes[8] > 0.5
-        if a_pressed and self.elastic_band.enable and self.pre_key == "D":
+        if not a_pressed:
+            self._a_press_t = None
+        elif self._a_press_t is None:
+            self._a_press_t = time.time()
+        if (a_pressed and self._a_press_t is not None
+                and (time.time() - self._a_press_t) >= 0.3
+                and self.elastic_band.enable and self.pre_key == "D"):
             print("[mujoco_node] 仿真启动 (A) — 释放弹性带")
             self.simulation_started = True
             self.elastic_band.enable = False
             self.pre_key = 'A'
+            self._a_press_t = None
 
         # C 键：axes[10] 进入停止前置
         if n > 10 and axes[10] > 0.5:
@@ -737,19 +746,21 @@ class RobotSimulator:
         d_pressed = n > 11 and axes[11] > 0.5
         f_down = n > 7 and axes[7] > 0.5  # F 下拨 axes[7] == -1.0
 
-        # F下拨 + D 上升沿：启动仿真（不释放弹力带）
-        if f_down and d_pressed and not self.last_d_pressed and not self.simulation_started:
-            print("[mujoco_node] 仿真启动 (F下+D) — 不释放弹力带")
-            self.simulation_started = True
-            self.pre_key = 'D'
-
-        # 仅在 C 之后的 D 上升沿触发重置
-        elif self.pre_key == 'C' and d_pressed and not self.last_d_pressed:
+        # 仅在 C 之后的 D 上升沿触发重置。必须优先于下面的"F下拨+D 启动"：
+        # 否则 simulation_started 恰为 False 时，C 之后那次 D 会被启动分支吃掉，
+        # reset 不执行，机器人会带着摔倒姿态被弹力带吊起来。
+        if self.pre_key == 'C' and d_pressed and not self.last_d_pressed:
             print("[mujoco_node] 触发 reset (C->D) — 重新挂起弹性带")
             self.pre_key = 'D'
             self.simulation_started = False
             self.trigger_reset = True
             self.elastic_band.enable = True
+
+        # F下拨 + D 上升沿：启动仿真（不释放弹力带）
+        elif f_down and d_pressed and not self.last_d_pressed and not self.simulation_started:
+            print("[mujoco_node] 仿真启动 (F下+D) — 不释放弹力带")
+            self.simulation_started = True
+            self.pre_key = 'D'
         self.last_d_pressed = d_pressed
 
     def _reset_robot(self):
@@ -759,8 +770,23 @@ class RobotSimulator:
 
         # 2. 所有 actuator 命令也清零，防止 rl_control 上次发的命令残留驱动关节
         self.data.ctrl[:] = 0.0
+        # A 长按计时从 reset 这一刻重新开始，避免按住 A 复位后立刻脱绳
+        self._a_press_t = None
 
-        # 3. 把浮基拨到悬挂高度（等同参考实现里第二次覆写 qpos）
+        # 3. 清空 rl_control 上一轮的命令缓存。否则 reset 后仍会用摔倒姿态的
+        #    PD 目标驱动直立姿态，启动瞬间腿会被拉成旧姿态。
+        while not self.raw_joint_commands.empty():
+            try:
+                self.raw_joint_commands.get_nowait()
+            except Exception:
+                break
+        self.joint_commands.clear()
+        self.last_raw_joint_commands.clear()
+
+        # 4. 弹力带长度回到 0.00 m，与复位流程"从第 1 步重来"一致
+        self.elastic_band.length = 0.0
+
+        # 5. 把浮基拨到悬挂高度（等同参考实现里第二次覆写 qpos）
         for j in range(self.model.njnt):
             if self.model.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE:
                 qpos_adr = self.model.jnt_qposadr[j]
@@ -773,7 +799,7 @@ class RobotSimulator:
                 self.data.qpos[qpos_adr + 6] = 0.0
                 break
 
-        # 4. 更新运动学，让 viewer 立刻呈现新位姿
+        # 6. 更新运动学，让 viewer 立刻呈现新位姿
         mujoco.mj_forward(self.model, self.data)
 
     def start(self):
