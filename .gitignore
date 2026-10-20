@@ -92,5 +92,6 @@ MJDATA.TXT
 .idea/
 .vscode/
 .history/
+/PROBLEM_STATE.md
 *.swp
 *.swo
