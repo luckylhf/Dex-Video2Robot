@@ -67,7 +67,7 @@ class ExportTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp:
             exporter.export_motion_policy_merged_as_onnx(env, actor, norm,
-                str(ROOT / 'policy/dex/standing_model_2000.pt'), temp)
+                str(ROOT / 'policy/dex/standing_baseline.pt'), temp)
             exporter.attach_onnx_metadata(env, 'offline_interface_test_only', temp, 'policy_merged.onnx')
             path = Path(temp) / 'policy_merged.onnx'
             validate_policy(path)

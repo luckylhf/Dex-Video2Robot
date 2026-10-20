@@ -116,12 +116,12 @@ RESUME=false LOAD_CKPT=policy/dex/wbt_model_46400.pt \
 站立头可单独微调：
 
 ```bash
-RESUME=false LOAD_CKPT=policy/dex/standing_model_2000.pt \
+RESUME=false LOAD_CKPT=policy/dex/standing_baseline.pt \
   RUN_PREFIX=dex_standing NUM_ENVS=1024 MAX_ITER=3000 \
   bash train_dex.sh medium dataset/standing/standing.npz 1
 ```
 
-也可以先使用随包的 `policy/dex/standing_baseline.pt` 进行站立播放。两份预制初始化权重、当前基线及校验 JSON 的区别见 [权重说明](policy/dex/README.md)。
+也可以直接用随包的 `policy/dex/standing_baseline.pt` 进行站立播放。动作跟踪初始化权重、站立基线及校验 JSON 的区别见 [权重说明](policy/dex/README.md)。
 
 恢复本项目中断的训练：
 

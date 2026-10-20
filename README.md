@@ -27,6 +27,20 @@ MP4 ── GVHMR ── 人体运动参数 ── Dex IK ── PKL
 
 PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理仿真共同产生机器人运动。两者应分别检查。
 
+## 各阶段示意
+
+按流程顺序展示各阶段画面，点击图片查看原图；运行步骤见各阶段标题链接。
+
+| [1. 人体动作估计](Dex-GMR/README.md) | [2. IK 重定向与 PKL 回放](Dex-GMR/README.md) | [3. NPZ 参考动作回放](Dex-Mimic/README.md) |
+| --- | --- | --- |
+| [![视频人体动作估计](docs/1-GMR.png)](docs/1-GMR.png) | [![Dex PKL 参考动作回放](docs/2-pkl运行.png)](docs/2-pkl运行.png) | [![Dex NPZ 参考动作回放](docs/3-npz运行.png)](docs/3-npz运行.png) |
+| 从视频估计人体运动，为机器人重定向提供输入。 | 将人体动作重定向到 Dex，并回放 PKL 检查姿态。 | 转换为训练用 NPZ 后回放，检查参考动作。 |
+
+| [4. Isaac 站立策略](Dex-Mimic/README.md) | [5. Isaac 动作策略](Dex-Mimic/README.md) | [6. ROS2 + MuJoCo](Dex-Mimic/ros_dex_deploy/README.md) |
+| --- | --- | --- |
+| [![Isaac 站立场景](docs/4-isaacsim-standing.png)](docs/4-isaacsim-standing.png) | [![Isaac 动作场景](docs/5-isaacsim-dance.png)](docs/5-isaacsim-dance.png) | [![ROS2 MuJoCo 与 Teleop GUI](docs/6-ROS2+Mujoco.png)](docs/6-ROS2+Mujoco.png) |
+| 在 Isaac 中播放站立策略，观察站立表现。 | 在 Isaac 中播放动作策略，检查动作跟踪效果。 | 通过 ROS2 控制链路运行 MuJoCo，使用 Teleop GUI 操作。 |
+
 ## 本项目整理了什么
 
 - 统一当前 Dex 的 URDF、MJCF、关节名、限位和脚底碰撞，保留当前本体质量与惯性。
@@ -46,9 +60,8 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 
 | 文件 | 用途 |
 | --- | --- |
-| `standing_model_2000.pt` | 软件包提供的预制站立权重，用于微调初始化 |
 | `wbt_model_46400.pt` | 软件包提供的预制动作跟踪权重，用于加快新动作训练 |
-| `standing_baseline.pt` | 适配当前本体的站立基线，用于站立播放和默认演示 |
+| `standing_baseline.pt` | 适配当前本体的站立基线，用于站立播放、默认演示和站立微调初始化 |
 
 **团队经验：加载预制动作权重后，约 3000 次迭代可开始看到效果。** 这是训练起点的经验值，不代表任意动作在 3000 次迭代后都已收敛。目标舞蹈仍需检查跟踪误差、跌倒和起止切换。
 
