@@ -22,6 +22,10 @@ import argparse
 from ament_index_python.packages import get_package_share_directory
 
 
+# A 键释放弹力带后，带力在多少秒内线性降到 0（软卸力）
+BAND_RELEASE_SECONDS = 0.8
+
+
 def quaternion_to_euler_scipy(w, x, y, z, degrees=False):
     import math
     if math.sqrt(w*w + x*x + y*y + z*z) < 1e-6:
@@ -223,6 +227,7 @@ class RobotSimulator:
         self.pre_key = None
         self.last_d_pressed = False
         self._a_press_t = None
+        self._band_release_t = None
         self.cmd_vel_x = 0.0
         self.cmd_vel_y = 0.0
         self.cmd_turn = 0.0
@@ -236,7 +241,9 @@ class RobotSimulator:
         self.imu_linear_velocity = None
         self.imu_linear_acceleration = None
         self.imu_magnetometer = None
-        self.pre_key = 'C'
+        # start() 里已复位到悬挂高度，首次 D 直接启动物理（不再先触发一次 reset）。
+        # 只有按过 C 之后，D 才作为 reset 键使用。
+        self.pre_key = None
 
         # 关节命令
         self.raw_joint_commands = Queue()
@@ -687,10 +694,25 @@ class RobotSimulator:
     def add_virtual_force(self):
         # A released band must not leave the previous step's force applied.
         self.data.xfrc_applied[self.band_attached_link, :3] = 0.0
-        if self.elastic_band.enable:
-            self.data.xfrc_applied[self.band_attached_link, :3] = self.elastic_band.Advance(
-            self.data.qpos[0:3], self.data.qvel[0:3]
+        if not self.elastic_band.enable:
+            return
+        # 用挂点（waist_pitch_link）而不是 pelvis 原点算带长与方向：
+        # 挂点比 pelvis 高 0.162 m，用 pelvis 会高估拉力、启动物理后自己往上飘。
+        force = self.elastic_band.Advance(
+            self.data.xpos[self.band_attached_link],
+            self.data.qvel[0:3],
         )
+        # A 键释放后把带力在 BAND_RELEASE_SECONDS 内线性降到 0，
+        # 否则脚底刚贴地时带子仍承担几乎全部体重，瞬间卸力等于把整个体重砸给策略。
+        if self._band_release_t is not None:
+            elapsed = time.time() - self._band_release_t
+            scale = max(0.0, 1.0 - elapsed / BAND_RELEASE_SECONDS)
+            force = force * scale
+            if scale <= 0.0:
+                self.elastic_band.enable = False
+                self._band_release_t = None
+                print("[mujoco_node] 弹性带已平滑释放（力降至 0）")
+        self.data.xfrc_applied[self.band_attached_link, :3] = force
 
     def _elastic_cmd_callback(self, msg: String) -> None:
         """响应 sim_joy GUI 的弹性带控制命令。"""
@@ -730,11 +752,18 @@ class RobotSimulator:
         if (a_pressed and self._a_press_t is not None
                 and (time.time() - self._a_press_t) >= 0.3
                 and self.elastic_band.enable and self.pre_key == "D"):
-            print("[mujoco_node] 仿真启动 (A) — 释放弹性带")
-            self.simulation_started = True
-            self.elastic_band.enable = False
-            self.pre_key = 'A'
-            self._a_press_t = None
+            if not self.simulation_started:
+                # 物理还没启动时按 A：不要一边启动物理一边脱绳，否则机器人会从悬挂高度
+                # 自由落体进入 MIMIC 直接摔。先按 F下+D 启动物理，再按 A 释放。
+                if self.pre_key != 'A_WAIT':
+                    print("[mujoco_node] A 忽略：请先 F 下拨 + D 启动物理（弹力带仍在）")
+                self.pre_key = 'A_WAIT'
+                self._a_press_t = None
+            else:
+                print("[mujoco_node] 仿真启动 (A) — 释放弹性带（0.8 s 内平滑卸力）")
+                self._band_release_t = time.time()
+                self.pre_key = 'A'
+                self._a_press_t = None
 
         # C 键：axes[10] 进入停止前置
         if n > 10 and axes[10] > 0.5:
@@ -772,6 +801,9 @@ class RobotSimulator:
         self.data.ctrl[:] = 0.0
         # A 长按计时从 reset 这一刻重新开始，避免按住 A 复位后立刻脱绳
         self._a_press_t = None
+        # 复位后带子重新生效，软卸力的进度清零
+        self._band_release_t = None
+        self.elastic_band.enable = True
 
         # 3. 清空 rl_control 上一轮的命令缓存。否则 reset 后仍会用摔倒姿态的
         #    PD 目标驱动直立姿态，启动瞬间腿会被拉成旧姿态。
@@ -787,17 +819,37 @@ class RobotSimulator:
         self.elastic_band.length = 0.0
 
         # 5. 把浮基拨到悬挂高度（等同参考实现里第二次覆写 qpos）
+        #    悬挂高度取弹力带的平衡点，而不是写死的 1.10 m：
+        #      k*(point_z - (z + c) - length) = m*g
+        #    其中 c 为挂点相对 pelvis 的高度差（随姿态变化，因此先摆一个基准高度量一次）。
+        #    写死 1.10 m 会让复位高度与带子张力不一致：启动物理瞬间被拽起或落下。
+        free_qpos_adr = None
         for j in range(self.model.njnt):
             if self.model.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE:
-                qpos_adr = self.model.jnt_qposadr[j]
-                self.data.qpos[qpos_adr + 0] = 0.0
-                self.data.qpos[qpos_adr + 1] = 0.0
-                self.data.qpos[qpos_adr + 2] = 1.10   # 悬挂高度
-                self.data.qpos[qpos_adr + 3] = 1.0    # 四元数 w=1（无旋转）
-                self.data.qpos[qpos_adr + 4] = 0.0
-                self.data.qpos[qpos_adr + 5] = 0.0
-                self.data.qpos[qpos_adr + 6] = 0.0
+                free_qpos_adr = self.model.jnt_qposadr[j]
                 break
+
+        def _place_pelvis(z_value):
+            self.data.qpos[free_qpos_adr + 0] = 0.0
+            self.data.qpos[free_qpos_adr + 1] = 0.0
+            self.data.qpos[free_qpos_adr + 2] = z_value
+            self.data.qpos[free_qpos_adr + 3] = 1.0    # 四元数 w=1（无旋转）
+            self.data.qpos[free_qpos_adr + 4] = 0.0
+            self.data.qpos[free_qpos_adr + 5] = 0.0
+            self.data.qpos[free_qpos_adr + 6] = 0.0
+
+        if free_qpos_adr is not None:
+            _place_pelvis(1.10)
+            mujoco.mj_forward(self.model, self.data)
+            _band_offset = float(self.data.xpos[self.band_attached_link][2]) - 1.10
+            _weight = float(self.model.body_subtreemass[1]) * 9.81
+            _hang_z = (float(self.elastic_band.point[2]) - _band_offset
+                       - _weight / float(self.elastic_band.stiffness)
+                       - float(self.elastic_band.length))
+            _place_pelvis(_hang_z)
+            print(f"[mujoco_node] 复位悬挂高度 pelvis z={_hang_z:.3f} m "
+                  f"(本体 {_weight / 9.81:.1f} kg, k={self.elastic_band.stiffness:.0f} N/m, "
+                  f"带长 {self.elastic_band.length:.2f} m)")
 
         # 6. 更新运动学，让 viewer 立刻呈现新位姿
         mujoco.mj_forward(self.model, self.data)
@@ -817,6 +869,9 @@ class RobotSimulator:
             # print("机器人已设置为zero姿态")
 
             # self.start_keyboard_listener()  # 禁用 mujoco 本地键盘控制，全部由 /sbus_data 接管
+            # 启动即摆到弹力带平衡高度：否则窗口里显示的是模型默认位姿（脚贴地），
+            # 第一次按 D 触发 reset 时会突然被"抬"到悬挂高度，看起来像机器人自己升高。
+            self._reset_robot()
             viewer_thread.start()
             sim_thread.start()
             # 启动发布线程
