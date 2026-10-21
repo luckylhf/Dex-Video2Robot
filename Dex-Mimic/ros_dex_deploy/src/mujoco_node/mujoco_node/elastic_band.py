@@ -26,6 +26,9 @@ class ElasticBand:
         """
         δx = self.point - x
         distance = np.linalg.norm(δx)
+        if distance < 1e-6:
+            # 挂点与悬挂点重合时方向无定义，直接返回零力以避免除零。
+            return np.zeros(3)
         direction = δx / distance
         v = np.dot(dx, direction)
         if self.property =="spring":

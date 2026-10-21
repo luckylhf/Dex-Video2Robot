@@ -87,6 +87,30 @@ fi
 echo "[init_env] pip install ${sptlib_wheels[0]}"
 python -m pip install --no-deps "${sptlib_wheels[0]}"
 
+# ---- 确保 venv 内真的生成了 colcon 命令 ----
+# --system-site-packages 下，系统已装同版本 colcon-common-extensions 时 pip 会判定
+# "Requirement already satisfied" 而跳过安装，venv/bin 里就不会有 colcon；
+# 之后 run_sim.sh / run_real.sh 调用到 PATH 中的系统 colcon，构建出的 entry shebang
+# 会指向系统 Python，运行时缺 venv 里的 mujoco / onnxruntime。
+colcon_bin="$VENV_DIR/bin/colcon"
+if [[ ! -x "$colcon_bin" ]]; then
+  # 只装 colcon-core（它才是 colcon 命令的提供者），且 --no-deps 避免顺带把 empy 升到 4.x：
+  # ROS 消息生成要求 empy 3.x，带依赖的 --ignore-installed 会覆盖 requirements 里的固定版本。
+  colcon_core_ver="$(python -c 'import importlib.metadata as m; print(m.version("colcon-core"))' 2>/dev/null || true)"
+  if [[ -n "$colcon_core_ver" ]]; then
+    echo "[init_env] venv 内缺 colcon 命令（pip 认为系统侧已满足）；按系统版本 $colcon_core_ver 装 colcon-core"
+    python -m pip install --no-deps --ignore-installed "colcon-core==$colcon_core_ver"
+  else
+    echo "[init_env] venv 内缺 colcon 命令（pip 认为系统侧已满足）；装 colcon-core"
+    python -m pip install --no-deps --ignore-installed colcon-core
+  fi
+fi
+if [[ ! -x "$colcon_bin" ]]; then
+  echo "[init_env] $colcon_bin 仍不存在；请检查上面的 pip 输出" >&2
+  exit 1
+fi
+echo "[init_env] colcon: $colcon_bin -> $(head -n1 "$colcon_bin")"
+
 # ---- 验证关键 import ----
 python - <<'PY'
 import importlib, importlib.util, os, sys

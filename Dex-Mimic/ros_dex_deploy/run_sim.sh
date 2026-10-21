@@ -19,11 +19,14 @@ export MIMIC_BUNDLE_DIR="$(realpath "${MIMIC_BUNDLE_DIR:-$WS_DIR/src/rl_control/
 python "$WS_DIR/check_bundle.py"
 echo "[run_sim] venv: $VIRTUAL_ENV ($(python -V))"
 
-# colcon 必须在 venv 中可用（init_env.sh 已装）
-if ! python -c "import colcon_core" >/dev/null 2>&1; then
-  echo "[run_sim] venv 缺 colcon；请重跑 ./init_env.sh" >&2
+# 显式使用 venv Python 执行 colcon，不依赖 PATH 或 colcon 自身的 shebang。
+venv_py="$VIRTUAL_ENV/bin/python"
+colcon_bin="$VIRTUAL_ENV/bin/colcon"
+if [[ ! -x "$colcon_bin" ]]; then
+  echo "[run_sim] 缺少 $colcon_bin；请重跑 ./init_env.sh" >&2
   exit 1
 fi
+echo "[run_sim] colcon: $venv_py $colcon_bin"
 
 # ---- ROS 发行版（22.04→humble；24.04→jazzy） ----
 if [[ -z "${ROS_DISTRO:-}" ]]; then
@@ -44,20 +47,49 @@ if [[ ! -r "$ROS_SETUP" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$ROS_SETUP"
-venv_py="$VIRTUAL_ENV/bin/python"
+
 # ---- build & launch ----
-# 检测 install/ 里 entry-script 的 shebang 是否还指向旧 python；如是则需要清掉重建
-if [[ -f "$WS_DIR/install/rl_control/lib/rl_control/rl_control_node_sim" ]]; then
-  shebang=$(head -n1 "$WS_DIR/install/rl_control/lib/rl_control/rl_control_node_sim")
-  venv_py="$VIRTUAL_ENV/bin/python"
-  if [[ "$shebang" != "#!$venv_py" ]]; then
-    echo "[run_sim] 检测到旧 install/ 的 shebang 指向 $shebang ；清理后重建以使用 $venv_py"
-    rm -rf "$WS_DIR/install" "$WS_DIR/build" "$WS_DIR/log"
-  fi
+# 本项目三个 ament_python 包的五个 console_scripts，必须全部生成。
+entry_paths=(
+  "$WS_DIR/install/rl_control/lib/rl_control/rl_control_node"
+  "$WS_DIR/install/rl_control/lib/rl_control/rl_control_node_sim"
+  "$WS_DIR/install/mujoco_node/lib/mujoco_node/mujoco_node"
+  "$WS_DIR/install/sim_joy/lib/sim_joy/teleop_gui"
+  "$WS_DIR/install/sim_joy/lib/sim_joy/teleop_joy"
+)
+
+check_entry_shebangs() {
+  local f sb bad=0
+  for f in "${entry_paths[@]}"; do
+    if [[ ! -f "$f" ]]; then
+      echo "[run_sim] 缺少入口脚本: $f" >&2
+      bad=1
+      continue
+    fi
+    sb="$(head -n1 "$f")"
+    if [[ "$sb" != "#!$venv_py" ]]; then
+      echo "[run_sim] shebang 未指向 venv python: $f -> $sb" >&2
+      bad=1
+    fi
+  done
+  return "$bad"
+}
+
+# 构建前：已有 install/ 但入口缺失或 shebang 不对则清理重建
+if [[ -d "$WS_DIR/install" ]] && ! check_entry_shebangs; then
+  echo "[run_sim] 检测到 install/ 内入口缺失或 shebang 不匹配 $venv_py；清理 build/install/log 后重建"
+  rm -rf "$WS_DIR/install" "$WS_DIR/build" "$WS_DIR/log"
 fi
 
 echo "[run_sim] colcon build (--symlink-install)"
-colcon build --symlink-install --cmake-args -DPYTHON_EXECUTABLE="$(which python)"
+# -DPYTHON_EXECUTABLE 只影响 CMake 包；ament_python 的 shebang 由启动 colcon 的解释器决定
+"$venv_py" "$colcon_bin" build --symlink-install --cmake-args -DPYTHON_EXECUTABLE="$venv_py"
+
+# 构建后：五个入口必须齐全且全部使用 venv Python。
+if ! check_entry_shebangs; then
+  echo "[run_sim] 构建产物入口缺失或 shebang 不指向 $venv_py；请检查构建日志" >&2
+  exit 1
+fi
 
 # shellcheck disable=SC1091
 source "$WS_DIR/install/setup.bash"
