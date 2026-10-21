@@ -7,7 +7,7 @@ decimation: 1            # fresh policy inference at 100Hz: engineer-tested moto
 num_actions: 29
 motor_nums: 29
 warm_start_time: 0.5     # seconds of warm-start blending at motion entry
-stand_duration_s: 1.0    # standing phase before/after each motion clip
+stand_duration_s: 0.3     # 交接提前：动作末帧后 0.3 s 就切站立头
 hold_final_reference: false
 max_target_step_standing: null    # standing: no limit (arm suppression already prevents vibration)
 max_target_step_motion: null      # motion: no limit

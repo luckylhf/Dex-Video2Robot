@@ -243,6 +243,10 @@ class FSMStateMimic(FSMState):
 
         # ── runtime state ─────────────────────────────────────────────────────
         self.last_action = np.zeros(self.num_actions, dtype=np.float32)
+        # 动作头最后一帧的目标（29 维，XML 顺序），用于切回站立头时的交叉淡化
+        self._last_motion_target_xml = None
+        # 站立阶段的参考 yaw 锚点（每个站立阶段开始时锁一次）
+        self._stand_anchor_yaw = None
         self._stand_total_steps: int = max(1, int(round(self.stand_duration_s / (self.physical_dt * self.decimation))))
         self._warm_start_steps: int = 0
 
@@ -370,6 +374,10 @@ class FSMStateMimic(FSMState):
             self._next_clip_idx = (self._active_clip_idx + 1) % len(self.clips)
         self._stand_step_count = 0
         self._playback_phase = "pre_stand"
+        self._stand_anchor_yaw = None   # 新站立阶段：重新锁一次 yaw
+        # 站立阶段的参考朝向以"机器人当前 heading"为基准，不能再带动作阶段的 clip 对齐量，
+        # 否则 anchor_rot6d 恒为 delta_yaw，策略会把它当成 heading 误差去"纠偏"（表现为扭一下）。
+        self._ref_yaw_inv[:] = [1.0, 0.0, 0.0, 0.0]
         clip_name = self.clips[self._next_clip_idx].name
         print(f"\n[Mimic] pre-stand → [{self._next_clip_idx}] {clip_name}")
 
@@ -400,12 +408,24 @@ class FSMStateMimic(FSMState):
 
     # ── per-step runners ─────────────────────────────────────────────────────
 
+    def _standing_anchor_quat(self, robot_quat: np.ndarray) -> np.ndarray:
+        """站立阶段的参考朝向锚点。
+
+        每个站立阶段开始时锁一次 yaw，之后不再跟随机器人。
+        原来每步都用 `yaw_from_quat(robot_quat)` 重锚，等于把 heading 误差永远置 0，
+        策略看不到自己在转，一旦有残余角速度就会一直自转（实测 2 s 转 180°），
+        然后倾角跟着涨、最后摔倒。锁定后 heading 误差真实存在，策略才有纠偏依据。
+        """
+        if self._stand_anchor_yaw is None:
+            self._stand_anchor_yaw = float(_yaw_from_quat(robot_quat))
+        return _quat_from_yaw(self._stand_anchor_yaw)
+
     def _run_standing_step(self):
-        """Run policy with yaw-aligned upright reference (same as sim2sim _yaw_aligned_default_ref)."""
+        """Run policy with a yaw-locked upright reference."""
         ref_pos_seq = self.default_joint_pos_seq
         ref_vel_seq = np.zeros(self.num_actions, dtype=np.float32)
         robot_quat = np.array(self.robot_data_.get_robot_quat(), dtype=np.float64)
-        ref_anchor_quat = _quat_from_yaw(_yaw_from_quat(robot_quat))
+        ref_anchor_quat = self._standing_anchor_quat(robot_quat)
         self._run_policy(ref_pos_seq, ref_vel_seq, ref_pos_seq, ref_vel_seq,
                          motion_step=0, total_steps=1, phase_mode_idx=0,
                          ref_anchor_quat=ref_anchor_quat)
@@ -446,14 +466,20 @@ class FSMStateMimic(FSMState):
         q_from_xml = self.robot_data_.get_joint_pos().copy()
         self._return_stand_q_from_seq = q_from_xml[self.mj2lab].astype(np.float32)
         self._playback_phase = "return_stand"
-        self.last_action[:] = 0.0
+        self._stand_anchor_yaw = None   # 收尾站立阶段：以交接瞬间的 yaw 为锚
+        # 同上：清掉动作阶段的 clip 对齐量，避免站立头看到恒定的 heading 误差而"扭一下"
+        self._ref_yaw_inv[:] = [1.0, 0.0, 0.0, 0.0]
+        # 不清 last_action：站立头接手时应当看到"动作头最后真实下发的那一帧动作"，
+        # 清零会在观测里制造 29 维跳变（原来的写法）。
+        if self.last_action is None:
+            self.last_action = np.zeros(self.num_actions, dtype=np.float32)
 
     def _run_return_stand_step(self):
         alpha = _smoothstep((self._stand_step_count + 1) / max(self._stand_total_steps, 1))
         ref_pos = (1.0 - alpha) * self._return_stand_q_from_seq + alpha * self.default_joint_pos_seq
         ref_vel = np.zeros(self.num_actions, dtype=np.float32)
         robot_quat = np.array(self.robot_data_.get_robot_quat(), dtype=np.float64)
-        ref_anchor_quat = _quat_from_yaw(_yaw_from_quat(robot_quat))
+        ref_anchor_quat = self._standing_anchor_quat(robot_quat)
         self._run_policy(ref_pos, ref_vel, ref_pos, ref_vel,
                          motion_step=0, total_steps=1, phase_mode_idx=0,
                          ref_anchor_quat=ref_anchor_quat)
@@ -535,6 +561,18 @@ class FSMStateMimic(FSMState):
 
         target_xml = np.zeros(self.motor_nums, dtype=np.float32)
         target_xml[self.mj2lab] = target_seq
+
+        # ── 头部切换软过渡（play_motion → return_stand）────────────────────────
+        # 动作头（phase_mode_idx=1）与站立头（=0）是两套不同的残差，切换瞬间
+        # 关节目标会跳一下，对刚跳完舞、还带残余动量的机器人是明显的冲击。
+        # 这里在 return_stand 阶段把"动作头最后的目标"与"站立头当前目标"
+        # 按 smoothstep 交叉淡化，淡化过程正好覆盖 stand_duration_s。
+        if phase_mode_idx == 1:
+            self._last_motion_target_xml = target_xml.copy()
+        elif (self._playback_phase == "return_stand"
+              and self._last_motion_target_xml is not None):
+            w = _smoothstep((self._stand_step_count + 1) / max(self._stand_total_steps, 1))
+            target_xml = ((1.0 - w) * self._last_motion_target_xml + w * target_xml).astype(np.float32)
 
         # Per-step joint target rate limit (sim2sim --max-target-step)
         # Skip clipping during return_stand — it needs large joint changes to return to standing
