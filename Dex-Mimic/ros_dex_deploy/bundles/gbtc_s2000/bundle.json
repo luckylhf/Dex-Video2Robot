@@ -1,0 +1,22 @@
+{
+  "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
+  "onnx_sha256": "b0922a8844b795dcfaa93b69b0b6c98d678cbb2a331e0f212a0b98ee859488da",
+  "contract_version": "2",
+  "asset_sha256": "9eec63b48f6fbc62f40d95a4bc379f8c40ae91dc957f47194f3f4dd995a82d07",
+  "motor_profile": "tg3-armature",
+  "purpose": "tracking",
+  "training_control_dt": 0.02,
+  "policy_control_dt": 0.01,
+  "motions": [
+    {
+      "file": "gbtc_with_transition.npz",
+      "frames": 947,
+      "fps": 50,
+      "duration_s": 18.94,
+      "fk_max_error_m": 2.9802322387695312e-08,
+      "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
+      "sha256": "338cdbe0b58bc1ec853f443cec2180fffab57a2852e2ab1dbe5296ea429d7b7f"
+    }
+  ],
+  "hardware_tested": false
+}
