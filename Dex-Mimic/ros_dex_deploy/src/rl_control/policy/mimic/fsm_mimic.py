@@ -281,6 +281,10 @@ class FSMStateMimic(FSMState):
         print(f"  kds_xml={self.kds_xml[:15].tolist()} ...")
         self._playback_phase = "default_pose"
         self._active_clip_idx = -1   # reset: next B will start from clip 0
+        self._stand_anchor_yaw = None
+        self._last_motion_target_xml = None
+        self._prev_target_xml = None
+        self._prev_motion_cmd = ''
         self._pending_next = False
         self._stand_step_count = 0
         self._motion_step = 0
@@ -295,6 +299,9 @@ class FSMStateMimic(FSMState):
         self._call_counter: int = 0
 
     def on_exit(self):
+        self._stand_anchor_yaw = None
+        self._last_motion_target_xml = None
+        self._prev_target_xml = None
         self.last_action[:] = 0.0
         self._playback_phase = "default_pose"
         self._pending_next = False
@@ -567,9 +574,7 @@ class FSMStateMimic(FSMState):
         # 关节目标会跳一下，对刚跳完舞、还带残余动量的机器人是明显的冲击。
         # 这里在 return_stand 阶段把"动作头最后的目标"与"站立头当前目标"
         # 按 smoothstep 交叉淡化，淡化过程正好覆盖 stand_duration_s。
-        if phase_mode_idx == 1:
-            self._last_motion_target_xml = target_xml.copy()
-        elif (self._playback_phase == "return_stand"
+        if (phase_mode_idx == 0 and self._playback_phase == "return_stand"
               and self._last_motion_target_xml is not None):
             w = _smoothstep((self._stand_step_count + 1) / max(self._stand_total_steps, 1))
             target_xml = ((1.0 - w) * self._last_motion_target_xml + w * target_xml).astype(np.float32)
@@ -584,6 +589,9 @@ class FSMStateMimic(FSMState):
                 target_xml = np.clip(target_xml, prev - _mts, prev + _mts)
             self._prev_target_xml = target_xml.copy()
 
+        # 缓存最终限速后的动作目标，保证交叉淡化从真实下发目标开始。
+        if phase_mode_idx == 1:
+            self._last_motion_target_xml = target_xml.copy()
         base = 35 - self.motor_nums
         self.robot_data_.q_d_[base:]    = target_xml
         self.robot_data_.q_dot_d_[base:] = 0.0
@@ -633,6 +641,9 @@ class FSMStateMimicDefault(FSMState):
 
         self.motor_nums: int = int(cfg["motor_nums"])
         self.interp_step: float = float(cfg.get("interp_step", 0.01))
+        # 沿用配置的原有时长：默认 0.01 s / 0.01 = 1 s。
+        self._sim_interp_duration_s = float(cfg.get("physical_dt", 0.01)) / self.interp_step
+        self._sim_interp_start_s = None
 
         session = onnxruntime.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
         meta = session.get_modelmeta().custom_metadata_map
@@ -655,34 +666,47 @@ class FSMStateMimicDefault(FSMState):
     def on_enter(self):
         print("[FSMStateMimicDefault] enter")
         self._q_factor = 0.0
-        # "F下+D" 是初始化路径：
-        #   仿真端 —— 吊起身体并把 29 个关节置为 q_init（MJCF 无 keyframe，复位值恒为 0）；
-        #   控制器 —— 必须用同一份 q_init 做起点，不能拿复位前的反馈插值，
-        #             否则身体已被摆正，控制器却从摔倒姿态开始插值，把身体拉回去。
-        # 真机没有复位动作，仍以当前实测关节角为起点。
-        init_path = bool(getattr(self.robot_data_.control_flag, 'init_reset', False))
-        if init_path:
-            self.robot_data_.control_flag.init_reset = False
-        if init_path and bool(getattr(self.robot_data_, 'sim_', False)):
-            self._start_pose = np.zeros(self.motor_nums, dtype=np.float32)   # == q_init
+        self._start_pose = self.robot_data_.get_joint_pos().copy()
+        self._sim_interp_start_s = (
+            self.robot_data_.sim_time_
+            if getattr(self.robot_data_, 'sim_', False)
+            and self.robot_data_.sim_feedback_coherent_ else None)
+        _src = '实测'
+        if self._consume_sim_init():
             _src = 'q_init(仿真复位值)'
-        else:
-            self._start_pose = self.robot_data_.get_joint_pos().copy()
-            _src = '实测'
         if os.environ.get("MQ_TRACE"):
             print(f"[trace] MIMICDEFAULT 起点={_src} max|q|={float(np.abs(self._start_pose).max()):.3f}")
+
+    def _consume_sim_init(self):
+        rd = self.robot_data_
+        if not (getattr(rd, 'sim_', False) and rd.sim_init_pending_
+                and rd.sim_feedback_coherent_):
+            return False
+        self._start_pose = np.zeros(self.motor_nums, dtype=np.float32)
+        self._q_factor = 0.0
+        self._sim_interp_start_s = rd.sim_time_
+        rd.sim_init_pending_ = False
+        rd.sim_init_ready_ = True
+        return True
 
     def on_exit(self):
         print("[FSMStateMimicDefault] exit")
 
     def run(self, flag: ControlFlag):
-        # 已经在 MIMICDEFAULT 时再按 D：状态不变不会触发 on_enter，这里丢弃残留标记，
-        # 避免它被下一次进入（例如 A→MIMIC→STOP→MIMICDEFAULT）误用。
-        if getattr(self.robot_data_.control_flag, 'init_reset', False):
-            self.robot_data_.control_flag.init_reset = False
+        # 新复位即使不发生 FSM 状态切换，也必须重新初始化。
+        self._consume_sim_init()
+        rd = self.robot_data_
+        is_sim = getattr(rd, 'sim_', False)
+        if is_sim and rd.sim_feedback_coherent_:
+            if self._sim_interp_start_s is None:
+                self._sim_interp_start_s = rd.sim_time_
+            elapsed = max(0.0, rd.sim_time_ - self._sim_interp_start_s)
+            self._q_factor = min(elapsed / self._sim_interp_duration_s, 1.0)
         if self._q_factor < 1.0:
             pos = (1.0 - self._q_factor) * self._start_pose + self._q_factor * self.default_xml
-            self._q_factor = min(self._q_factor + self.interp_step, 1.0)
+            if not is_sim:
+                # 真机保持原有的控制周期插值，首帧目标仍为实测起点。
+                self._q_factor = min(self._q_factor + self.interp_step, 1.0)
         else:
             pos = self.default_xml
         base = 35 - self.motor_nums

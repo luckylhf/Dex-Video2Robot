@@ -232,6 +232,7 @@ class RobotSimulator:
         self._a_wait_warned = False   # “物理未启动时按 A”的提示只打一次
         # 复位（初始化）完成时刻：早于此刻产生的控制命令一律丢弃（命令归仿真端管）
         self._init_stamp_ns = 0
+        self._sim_init_id = ''
         self.cmd_vel_x = 0.0
         self.cmd_vel_y = 0.0
         self.cmd_turn = 0.0
@@ -380,6 +381,7 @@ class RobotSimulator:
             #构造关节状态消息
             motor_status_msg = MotorStatusMsg()
             motor_status_msg.header.stamp = self.node.get_clock().now().to_msg()
+            motor_status_msg.header.frame_id = sensor_data['sim_init_frame']
             for joint_name in joint_names:
                 if joint_name in joint_positions and joint_name in joint_velocities:
                     motor_status = self.construct_motor_status(
@@ -501,6 +503,9 @@ class RobotSimulator:
         with self.joint_cmd_lock:
             current_time = self.node.get_clock().now().to_msg()
             msg_time = msg.header.stamp
+            # 只有基于本次复位反馈生成的命令才能进入队列。
+            if msg.header.frame_id != f'dex_sim:{self._sim_init_id}':
+                return
             time_diff = (current_time.sec - msg_time.sec) * 1000000000 + (current_time.nanosec - msg_time.nanosec)
             time_diff_ms = time_diff / 1000000.0
             if time_diff_ms > 100:
@@ -599,6 +604,8 @@ class RobotSimulator:
         # 更新传感器数据供发布线程使用
         with self.sensor_data_lock:
             self.last_sensor_data = {
+                # 时间取采样时的 MuJoCo data.time，不能用消息发布时的 ROS 时钟。
+                'sim_init_frame': f'dex_sim:{self._sim_init_id}:{int(self.simulation_started and not self.paused)}:{self.data.time:.9f}',
                 'joint_positions': self.joint_positions.copy(),
                 'joint_velocities': self.joint_velocities.copy(),
                 'joint_torques': self.joint_torques.copy(),
@@ -814,11 +821,17 @@ class RobotSimulator:
         self.last_d_pressed = d_pressed
 
     def _reset_robot(self):
-        """全量重置仿真状态，等同参考实现 mujoco_node.cpp reset_robot()。"""
+        """复位、清缓存和切换代次与命令入队使用同一把锁。"""
+        with self.joint_cmd_lock:
+            self._reset_robot_locked()
+
+    def _reset_robot_locked(self):
+        """调用者已持有 joint_cmd_lock；身体与控制器约定 q_init=0。"""
+        self._sim_init_id = str(time.monotonic_ns())
         # 1. 全量清零（等同 mj_resetData：qpos 回 keyframe 0 或模型默认值，qvel/ctrl/act 归零）
         mujoco.mj_resetData(self.model, self.data)
         # q_init 契约：模型无 keyframe，29 个 hinge 关节复位值恒为 0。
-        # 控制器端（FSMStateMimicDefault）在"F下+D 初始化路径"下用同一份 q_init=0 作为
+        # 控制器端在收到本次完整复位反馈后，用同一份 q_init=0 作为
         # 插值起点，因此这里显式置零，避免将来加 keyframe 时两边悄悄不一致。
         for _j in range(self.model.njnt):
             if self.model.jnt_type[_j] == mujoco.mjtJoint.mjJNT_HINGE:
@@ -888,7 +901,9 @@ class RobotSimulator:
         # 6. 更新运动学，让 viewer 立刻呈现新位姿
         mujoco.mj_forward(self.model, self.data)
 
-        # 7. 记下初始化完成时刻：此后产生的控制命令才会被应用（旧命令在上面已被清空）
+        # 立即刷新传感器快照；发布线程不会给旧姿态重新贴上新复位代次。
+        self.read_sensors()
+        # 7. 记下初始化完成时刻：此后产生且代次匹配的控制命令才会被应用。
         if self.node is not None:
             self._init_stamp_ns = self.node.get_clock().now().nanoseconds
         if os.environ.get("MQ_TRACE"):

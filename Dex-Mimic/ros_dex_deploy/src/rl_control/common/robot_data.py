@@ -51,6 +51,13 @@ class RobotData:
         # 部署模式（由 robot_interface.load_config 按实际配置写入）：
         # 供共用 FSM 判断"F下+D 是仿真初始化路径还是真机保持路径"。
         self.sim_ = False
+        # 仿真复位代次来自三组完整反馈，不由 D 按键推测。
+        self.sim_init_id_ = 0
+        self.sim_init_pending_ = False
+        self.sim_init_ready_ = False
+        self.sim_running_ = False
+        self.sim_feedback_coherent_ = False
+        self.sim_time_ = 0.0  # 三组有效反馈中的最小物理采样时间，单位 s
 
 
     def copy_from(self, other: 'RobotData'):

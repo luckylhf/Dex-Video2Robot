@@ -20,9 +20,6 @@ class ControlFlag:
     motion_cmd: str = ""
     # 禁用、启用手柄控制标志
     enable: bool = True
-    # "F下拨 + D" = 初始化路径：仿真端会把身体吊起、关节置为 q_init(0)，
-    # 控制器据此用同一份 q_init 作为插值起点（真机无复位动作，仍用实测值）。
-    init_reset: bool = False
 
 @dataclass
 class YUNZHUOMap:
@@ -197,12 +194,9 @@ class JoystickHumanoid:
                                 self.joy_flag.fsm_state_command = "gotoMIMIC"
                         else:
                             self._a_press_t = None
-                        #F下拨 + D → gotoMIMICDEFAULT（同时是初始化路径，只在上升沿置位）
+                        # F下拨 + D 只请求准备姿态；是否复位由仿真反馈确定。
                         if self.joy_map.d == 1.0:
                             self.joy_flag.fsm_state_command = "gotoMIMICDEFAULT"
-                            if not getattr(self, '_d_prev', False):
-                                self.joy_flag.init_reset = True
-                        self._d_prev = self.joy_map.d == 1.0
                     elif self.joy_map.e == 1.0:
                         #e下拨
                         self._a_press_t = None

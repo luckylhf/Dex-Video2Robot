@@ -214,6 +214,9 @@ class RobotInterfaceImpl(RobotInterface):
             if value is None:
                 raise ValueError(f"[sim] 缺少 {name}，无法确认坐标约定")
             arr = np.asarray(value, dtype=np.float64).ravel()
+            expected_size = self.whole_joint_nums - self.floating_base_dof
+            if arr.size != expected_size:
+                raise ValueError(f"[sim] {name} 应有 {expected_size} 项，实际 {arr.size}")
             # 先判有限性：NaN 与任何阈值比较都为 False，只用 max(>) 会漏过去
             if not np.all(np.isfinite(arr)):
                 raise ValueError(f"[sim] {name} 含 NaN/Inf，配置不可用：{arr}")
@@ -348,10 +351,12 @@ class RobotInterfaceImpl(RobotInterface):
 
     def update_robot_state(self):
         """读取电机状态数据更新为机器人状态数据"""
+        sim_messages = []
         # 处理腿部电机状态
         while True:
             try:
                 msg = self.queue_leg_motor_state.peek()
+                sim_messages.append(msg)
                 if self.debug:
                     current_time = self.node.get_clock().now().to_msg()
                     msg_time = msg.header.stamp
@@ -371,6 +376,7 @@ class RobotInterfaceImpl(RobotInterface):
         while True:
             try:
                 msg = self.queue_arm_motor_state.peek()
+                sim_messages.append(msg)
                 if self.debug:
                     current_time = self.node.get_clock().now().to_msg()
                     msg_time = msg.header.stamp
@@ -391,6 +397,7 @@ class RobotInterfaceImpl(RobotInterface):
         while True:
             try:
                 msg = self.queue_waist_motor_state.peek()
+                sim_messages.append(msg)
                 if self.debug:
                     current_time = self.node.get_clock().now().to_msg()
                     msg_time = msg.header.stamp
@@ -405,6 +412,51 @@ class RobotInterfaceImpl(RobotInterface):
                 break
             except queue.Empty:
                 time.sleep(0.0001)
+
+        if self.sim:
+            self._update_sim_init_state(sim_messages)
+
+    def _update_sim_init_state(self, messages):
+        """只接受同一复位/运行状态的腿、臂、腰完整反馈。控制线程调用。"""
+        rd = self.robot_data_
+        rd.sim_feedback_coherent_ = False
+        frames = [m.header.frame_id.split(':') for m in messages]
+        if len(frames) != 3 or any(len(parts) != 4 for parts in frames):
+            return
+        # 允许三个关节组来自相邻采样，但代次和运行状态必须一致。
+        if len({tuple(parts[:3]) for parts in frames}) != 1:
+            return
+        parts = frames[0]
+        if parts[0] != 'dex_sim' or parts[2] not in ('0', '1'):
+            return
+        try:
+            init_id = int(parts[1])
+            sample_times = [float(parts[3]) for parts in frames]
+        except ValueError:
+            return
+        if not all(np.isfinite(t) and t >= 0.0 for t in sample_times):
+            return
+        sim_time = min(sample_times)  # 不先于任何一组反馈推进目标。
+        if (init_id <= 0 or init_id < rd.sim_init_id_
+                or (init_id == rd.sim_init_id_ and sim_time < rd.sim_time_)):
+            return
+        n_leg, n_arm = self.id_map.leg_motor_nums, self.id_map.arm_motor_nums
+        n_waist = self.id_map.waist_motor_nums
+        groups = (range(n_leg), range(n_leg + n_waist, n_leg + n_waist + n_arm),
+                  range(n_leg, n_leg + n_waist))
+        for msg, indices in zip(messages, groups):
+            expected = {self.id_map.get_id_by_index(i) for i in indices}
+            if (len(msg.status) != len(expected)
+                    or {s.name for s in msg.status} != expected
+                    or not all(np.isfinite([s.pos, s.speed, s.current]).all() for s in msg.status)):
+                return
+        if init_id != rd.sim_init_id_:
+            rd.sim_init_id_ = init_id
+            rd.sim_init_pending_ = True
+            rd.sim_init_ready_ = False
+        rd.sim_time_ = sim_time
+        rd.sim_running_ = parts[2] == '1'
+        rd.sim_feedback_coherent_ = True
 
     def motor_state_to_robot_state(self, status, received_flag: bool):
         index = self.id_map.get_index_by_id(status.name)
@@ -545,6 +597,8 @@ class RobotInterfaceImpl(RobotInterface):
         if self.legs_control_status == [] or current_state in self.legs_control_status:
             leg_msg = CmdMotorCtrl()
             leg_msg.header.stamp = self.node.get_clock().now().to_msg()
+            if self.sim:
+                leg_msg.header.frame_id = f'dex_sim:{self.robot_data_.sim_init_id_}'
             for i in range(self.id_map.leg_motor_nums):
                 cmd = MotorCtrl()
                 cmd.name = self.id_map.get_id_by_index(i)
@@ -572,6 +626,8 @@ class RobotInterfaceImpl(RobotInterface):
             # 腰部控制命令
             waist_msg = CmdMotorCtrl()
             waist_msg.header.stamp = self.node.get_clock().now().to_msg()
+            if self.sim:
+                waist_msg.header.frame_id = f'dex_sim:{self.robot_data_.sim_init_id_}'
             for i in range(self.id_map.waist_motor_nums):
                 cmd = MotorCtrl()
                 motor_idx = i + self.id_map.leg_motor_nums
@@ -604,6 +660,8 @@ class RobotInterfaceImpl(RobotInterface):
             # 手臂控制命令
             arm_msg = CmdMotorCtrl()
             arm_msg.header.stamp = self.node.get_clock().now().to_msg()
+            if self.sim:
+                arm_msg.header.frame_id = f'dex_sim:{self.robot_data_.sim_init_id_}'
             if current_state in self.left_arm_only_status:
                 control_index = np.arange(0, 7)
             elif current_state in self.right_arm_only_status:
@@ -640,6 +698,9 @@ class RobotInterfaceImpl(RobotInterface):
     def send_motor_commands(self, flag: ControlFlag):
         """发布电机控制命令"""
         if not self.initialized:
+            return
+        if self.sim and not (self.robot_data_.sim_init_ready_
+                             and self.robot_data_.sim_feedback_coherent_):
             return
         if not self.sim:
             #真机
@@ -836,10 +897,6 @@ class RobotInterfaceImpl(RobotInterface):
             self.robot_data_.walk_cmd_ = [x_command, y_command, yaw_command]
         self.robot_data_.control_flag.fsm_state_command = flag.fsm_state_command
         self.robot_data_.control_flag.motion_cmd = getattr(flag, 'motion_cmd', '')
-        # 初始化标记：一次性转交（joy_flag 置位 → robot_data 消费）
-        if getattr(flag, 'init_reset', False):
-            self.robot_data_.control_flag.init_reset = True
-            flag.init_reset = False
 
 def get_robot_interface(robot_data: RobotData, config_path: str) -> RobotInterface:
     """工厂函数，返回机器人接口实例"""
