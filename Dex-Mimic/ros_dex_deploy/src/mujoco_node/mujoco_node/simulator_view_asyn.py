@@ -188,7 +188,7 @@ class RobotSimulator:
         # 启动可视化器
         self.paused = False
         # 禁用 viewer 的 GLFW 键盘回调（UP/DOWN/ESC 等），遥控器接管所有运行控制
-        self.viewer = mujoco.viewer.launch_passive(self.model, self.data, show_left_ui=False, show_right_ui=False)
+        self.viewer = mujoco.viewer.launch_passive(self.model, self.data, show_left_ui=True, show_right_ui=True)
         self.viewer.cam.lookat = self.data.xpos[self.model.body("pelvis").id]
         self.viewer.cam.distance = 3
         self.view_dt = 0.03
