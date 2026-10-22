@@ -1,8 +1,8 @@
 {
   "model_sha256": "17573c55d1c9d9d43b2e44a5e3ebc237027bfcfb6f5b5d928aa0205792548194",
-  "onnx_sha256": "4f0366f1969808ca455de10b2ab79b66868253113d46f3af7d0938d85a0d60ee",
+  "onnx_sha256": "abf6199e33f5a33fe1e9470fcf94800af0fdd03ac1db2e618693fc561a854ea4",
   "contract_version": "2",
-  "asset_sha256": "da1951e7711773ba04a136ea346e3612e6f6414a00e007587ef320da91a7a6d7",
+  "asset_sha256": "9eec63b48f6fbc62f40d95a4bc379f8c40ae91dc957f47194f3f4dd995a82d07",
   "motor_profile": "tg3-armature",
   "purpose": "standing-demo",
   "training_control_dt": 0.02,
