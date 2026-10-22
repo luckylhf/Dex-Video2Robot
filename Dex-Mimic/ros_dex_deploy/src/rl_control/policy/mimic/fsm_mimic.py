@@ -655,12 +655,31 @@ class FSMStateMimicDefault(FSMState):
     def on_enter(self):
         print("[FSMStateMimicDefault] enter")
         self._q_factor = 0.0
-        self._start_pose = self.robot_data_.get_joint_pos().copy()
+        # "F下+D" 是初始化路径：
+        #   仿真端 —— 吊起身体并把 29 个关节置为 q_init（MJCF 无 keyframe，复位值恒为 0）；
+        #   控制器 —— 必须用同一份 q_init 做起点，不能拿复位前的反馈插值，
+        #             否则身体已被摆正，控制器却从摔倒姿态开始插值，把身体拉回去。
+        # 真机没有复位动作，仍以当前实测关节角为起点。
+        init_path = bool(getattr(self.robot_data_.control_flag, 'init_reset', False))
+        if init_path:
+            self.robot_data_.control_flag.init_reset = False
+        if init_path and bool(getattr(self.robot_data_, 'sim_', False)):
+            self._start_pose = np.zeros(self.motor_nums, dtype=np.float32)   # == q_init
+            _src = 'q_init(仿真复位值)'
+        else:
+            self._start_pose = self.robot_data_.get_joint_pos().copy()
+            _src = '实测'
+        if os.environ.get("MQ_TRACE"):
+            print(f"[trace] MIMICDEFAULT 起点={_src} max|q|={float(np.abs(self._start_pose).max()):.3f}")
 
     def on_exit(self):
         print("[FSMStateMimicDefault] exit")
 
     def run(self, flag: ControlFlag):
+        # 已经在 MIMICDEFAULT 时再按 D：状态不变不会触发 on_enter，这里丢弃残留标记，
+        # 避免它被下一次进入（例如 A→MIMIC→STOP→MIMICDEFAULT）误用。
+        if getattr(self.robot_data_.control_flag, 'init_reset', False):
+            self.robot_data_.control_flag.init_reset = False
         if self._q_factor < 1.0:
             pos = (1.0 - self._q_factor) * self._start_pose + self._q_factor * self.default_xml
             self._q_factor = min(self._q_factor + self.interp_step, 1.0)

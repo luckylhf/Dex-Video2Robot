@@ -187,6 +187,46 @@ class RobotInterfaceImpl(RobotInterface):
         self.ankle_kp_p = np.array(interface_config.get('ankle_kp_p'))
         self.ankle_kd_p = np.array(interface_config.get('ankle_kd_p'))
 
+        # 配置加载完毕、控制线程启动之前校验仿真侧的坐标约定
+        self._validate_sim_coordinate_contract()
+
+        # 把部署模式写进 robot_data：共用 FSM 据此区分
+        # "仿真 F下+D 初始化路径（用 q_init）" 与 "真机保持路径（用实测值）"
+        self.robot_data_.sim_ = bool(self.sim)
+
+    def _validate_sim_coordinate_contract(self):
+        """仿真模式下，反馈与发送必须使用同一套坐标约定。
+
+        `motor_state_to_robot_state()` 在仿真里不再做编码器整圈（zero_cnt）处理，
+        因此 `zero_pos / motor_dir / zero_offset` 必须都是恒等值，
+        否则反馈（已跳过整圈）与命令（仍做这三项变换）会各用一套坐标。
+
+        注意：真机不做此校验，其编码器多圈语义需按驱动协议单独核对。
+        """
+        if not self.sim:
+            return
+        checks = (
+            ('zero_pos', getattr(self, 'zero_pos', None), 0.0),
+            ('motor_dir', getattr(self, 'motor_dir', None), 1.0),
+            ('zero_offset', getattr(self, 'zero_offset', None), 0.0),
+        )
+        for name, value, expect in checks:
+            if value is None:
+                raise ValueError(f"[sim] 缺少 {name}，无法确认坐标约定")
+            arr = np.asarray(value, dtype=np.float64).ravel()
+            # 先判有限性：NaN 与任何阈值比较都为 False，只用 max(>) 会漏过去
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(f"[sim] {name} 含 NaN/Inf，配置不可用：{arr}")
+            deviation = float(np.max(np.abs(arr - expect)))
+            if deviation > 1e-9:
+                raise ValueError(
+                    f"[sim] {name} 必须为恒等值 {expect}，实际最大偏差 {deviation:.3e}；"
+                    f"仿真反馈已跳过整圈处理，命令侧仍会应用该项，两者会不一致")
+        if self.node is not None:
+            self.node.get_logger().info(
+                f"[sim] 坐标约定校验通过：zero_pos=0, motor_dir=1, zero_offset=0 "
+                f"（{arr.size} 个电机），配置 {self.config_path}")
+
     def _load_control_status(self, config: Dict[str, Any]):
         # 字符串命令到枚举值的映射
         # 必须覆盖 yaml *_control_status 中可能出现的所有状态名，否则触发 KeyError
@@ -383,13 +423,19 @@ class RobotInterfaceImpl(RobotInterface):
             self.robot_data_.q_a_[robotdata_index] = (
                 status.pos - self.zero_pos[index]
             ) * self.motor_dir[index] + self.zero_offset[index]
-            if self.robot_data_.q_a_[robotdata_index] > math.pi:
-                self.zero_cnt[index] = -1.0
-            elif self.robot_data_.q_a_[robotdata_index] < -math.pi:
-                self.zero_cnt[index] = 1.0
+            # 仿真：MuJoCo 发布的就是关节真实角度，没有编码器多圈语义，不做整圈处理。
+            # 若照搬真机逻辑，肩 roll（限位 3.334 > π）与髋 yaw（限位 -4.451 < -π）
+            # 一旦到达合法限位就会把 zero_cnt 锁存成 ∓1 且永不复位；此后反馈整体偏移
+            # ±2π、命令同时反向偏移 ∓2π，关节被顶死在限位 —— 即"复位后按 D 抬手/抬腿"。
+            # 真机保留原逻辑，其圈数语义需按驱动协议单独核对。
+            if not self.sim:
+                if self.robot_data_.q_a_[robotdata_index] > math.pi:
+                    self.zero_cnt[index] = -1.0
+                elif self.robot_data_.q_a_[robotdata_index] < -math.pi:
+                    self.zero_cnt[index] = 1.0
 
-            self.robot_data_.q_a_[
-                robotdata_index] += self.zero_cnt[index] * 2.0 * math.pi
+                self.robot_data_.q_a_[
+                    robotdata_index] += self.zero_cnt[index] * 2.0 * math.pi
             self.robot_data_.q_dot_a_[robotdata_index] *= self.motor_dir[index]
             self.robot_data_.tau_a_[robotdata_index] *= self.motor_dir[index]
 
@@ -790,6 +836,10 @@ class RobotInterfaceImpl(RobotInterface):
             self.robot_data_.walk_cmd_ = [x_command, y_command, yaw_command]
         self.robot_data_.control_flag.fsm_state_command = flag.fsm_state_command
         self.robot_data_.control_flag.motion_cmd = getattr(flag, 'motion_cmd', '')
+        # 初始化标记：一次性转交（joy_flag 置位 → robot_data 消费）
+        if getattr(flag, 'init_reset', False):
+            self.robot_data_.control_flag.init_reset = True
+            flag.init_reset = False
 
 def get_robot_interface(robot_data: RobotData, config_path: str) -> RobotInterface:
     """工厂函数，返回机器人接口实例"""

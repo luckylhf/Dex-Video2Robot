@@ -230,6 +230,8 @@ class RobotSimulator:
         self._a_press_t = None
         self._band_release_t = None
         self._a_wait_warned = False   # “物理未启动时按 A”的提示只打一次
+        # 复位（初始化）完成时刻：早于此刻产生的控制命令一律丢弃（命令归仿真端管）
+        self._init_stamp_ns = 0
         self.cmd_vel_x = 0.0
         self.cmd_vel_y = 0.0
         self.cmd_turn = 0.0
@@ -503,6 +505,11 @@ class RobotSimulator:
             time_diff_ms = time_diff / 1000000.0
             if time_diff_ms > 100:
                 print(f"[WARNING] Time difference: {time_diff_ms} ms, abandon this command")
+                return
+            # 初始化（复位）之前产生的命令不再应用：命令的归属方是仿真端，由这里统一丢弃，
+            # 控制端不需要参与任何握手。
+            if self._init_stamp_ns and (
+                    msg_time.sec * 1000000000 + msg_time.nanosec) < self._init_stamp_ns:
                 return
                 
             for cmd in msg.cmds:
@@ -810,6 +817,12 @@ class RobotSimulator:
         """全量重置仿真状态，等同参考实现 mujoco_node.cpp reset_robot()。"""
         # 1. 全量清零（等同 mj_resetData：qpos 回 keyframe 0 或模型默认值，qvel/ctrl/act 归零）
         mujoco.mj_resetData(self.model, self.data)
+        # q_init 契约：模型无 keyframe，29 个 hinge 关节复位值恒为 0。
+        # 控制器端（FSMStateMimicDefault）在"F下+D 初始化路径"下用同一份 q_init=0 作为
+        # 插值起点，因此这里显式置零，避免将来加 keyframe 时两边悄悄不一致。
+        for _j in range(self.model.njnt):
+            if self.model.jnt_type[_j] == mujoco.mjtJoint.mjJNT_HINGE:
+                self.data.qpos[self.model.jnt_qposadr[_j]] = 0.0
 
         # 2. 所有 actuator 命令也清零，防止 rl_control 上次发的命令残留驱动关节
         self.data.ctrl[:] = 0.0
@@ -866,12 +879,20 @@ class RobotSimulator:
                        - _weight / float(self.elastic_band.stiffness)
                        - float(self.elastic_band.length))
             _place_pelvis(_hang_z)
+            if os.environ.get("MQ_TRACE"):
+                print(f"[trace] mujoco.reset_done t={time.monotonic():.3f} pelvis_z={_hang_z:.3f}")
             print(f"[mujoco_node] 复位悬挂高度 pelvis z={_hang_z:.3f} m "
                   f"(本体 {_weight / 9.81:.1f} kg, k={self.elastic_band.stiffness:.0f} N/m, "
                   f"带长 {self.elastic_band.length:.2f} m)")
 
         # 6. 更新运动学，让 viewer 立刻呈现新位姿
         mujoco.mj_forward(self.model, self.data)
+
+        # 7. 记下初始化完成时刻：此后产生的控制命令才会被应用（旧命令在上面已被清空）
+        if self.node is not None:
+            self._init_stamp_ns = self.node.get_clock().now().nanoseconds
+        if os.environ.get("MQ_TRACE"):
+            print(f"[trace] mujoco.init_done t={time.monotonic():.3f}")
 
     def start(self):
         from threading import Thread

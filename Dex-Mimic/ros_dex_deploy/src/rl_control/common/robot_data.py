@@ -48,6 +48,10 @@ class RobotData:
         # 控制符
         self.control_flag = ControlFlag()
 
+        # 部署模式（由 robot_interface.load_config 按实际配置写入）：
+        # 供共用 FSM 判断"F下+D 是仿真初始化路径还是真机保持路径"。
+        self.sim_ = False
+
 
     def copy_from(self, other: 'RobotData'):
         """从另一个RobotData对象复制数据"""
