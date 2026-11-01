@@ -132,6 +132,27 @@ RESUME=true bash train_dex.sh medium dataset/npz_dex/dance_with_transition.npz \
 
 `LOAD_CKPT` 与 `RESUME=true` 互斥。观察训练曲线可运行 `bash log.sh`。
 
+<a id="joint-control-legacy"></a>
+
+### 关节控制的历史配置与可选调整
+
+当前训练配置沿用了旧 `mimic_c1_dex` 参考实现中的六轴零残差设置。模型、参考动作及部署接口都保留 **29 个身体活动关节**；其中 **23 轴接受策略残差修正**，左右 `elbow_yaw`（前臂旋转）、`wrist_pitch`（手腕俯仰）、`wrist_roll`（手腕滚转）共 **6 轴由 PD 直接跟踪参考角度**。这六轴会随动作变化，并未固定在某个站立姿势；其策略输出因 `action_scale=0` 不直接修正目标角度。
+
+动作目标可概括为 `目标角度 = 参考角度 + 策略输出 × action_scale`（省略滤波与限位）。希望全部 29 轴统一采用“参考动作 + 策略残差”的使用者，可自行按以下步骤调整：
+
+1. 修改 [训练配置 `simple_env_cfg.py`](source/whole_body_tracking/whole_body_tracking/tasks/tracking/config/dex_evt/simple_env_cfg.py) 中 `DexEVTSimpleEnvCfg.__post_init__()` 的 `_scale` 设置，删除下面三行，或将零倍率替换为经验证的非零倍率。使用 `*= 1.0` 表示保留该关节组已有的缩放值，并非把实际 `action_scale` 设为 1 rad。
+
+   ```python
+   _scale["elbow_yaw_.*_joint"] *= 0.
+   _scale["wrist_pitch_.*_joint"] *= 0.
+   _scale["wrist_roll_.*_joint"] *= 0.
+   ```
+
+2. 在新配置下重新训练，或通过 `LOAD_CKPT` 显式加载旧权重后微调，同时验证站立头与动作头。旧权重虽有 29 维输出，也不能直接视为已适配开放六轴后的控制方式；当前 PT 契约未校验 `action_scale`，加载成功不代表控制语义一致。
+3. 使用与训练相同的缩放配置播放并重新导出、打包，让 ONNX 元数据携带新的 `action_scale`；仅修改旧 ONNX 元数据不能替代训练。按后文流程检查 Isaac、独立 MuJoCo 与 ROS2 + MuJoCo 中的六轴跟踪误差、抖动及站立/动作切换，真机效果另行验证。
+
+这里统一的是各活动关节参与策略残差修正的方式；各轴的缩放幅度、PD 增益及限位仍应按电机和动作需求分别设置。头部两轴继续固定，手指不在本包控制范围内。随包配置与权重保留原有六轴零残差方案。
+
 ## 4. 播放与导出
 
 将下面的目录名与 checkpoint 换成训练实际产出的（目录名以 `ls -t logs/rsl_rl/dex_evt_fix | head -1` 为准），并选择匹配的 NPZ：
