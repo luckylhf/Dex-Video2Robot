@@ -74,6 +74,8 @@ def retarget_frames(frames, fps, source, height, output, view=False,
                      'geometry_distance_fallbacks': sum(getattr(limit, 'distance_fallback_count', 0)
                                                         for limit in retarget.ik_limits),
                      'local_body_pos': None, 'link_body_list': None}, f)
+    from motion_quality import report
+    report(output, ROOT / 'assets/dex/mjcf/dex_29.xml', manifest, 'gmr')
     print(f'Saved {output}: {len(qpos)} frames, {fps:g} fps, {len(joint_names)} joints; model={Path(ROBOT_XML_DICT["dex_evt"]).name}')
     return output
 
@@ -97,7 +99,29 @@ if __name__ == '__main__':
     parser.add_argument('--ik-recovery', choices=['strict', 'table-retry'], default='strict',
                         help='Explicit per-table fallback: 50x damping and position limits only; '
                              'both failed tables hold the previous pose; final NPZ checks remain required')
+    from retarget_backend import add_options, identity as backend_identity, run as run_backend
+    add_options(parser)
+    parser.add_argument('--input-fps',type=float)
+    parser.add_argument('--up-axis',choices=['y','z'])
+    parser.add_argument('--units',choices=['m'])
+    parser.add_argument('--max-frames',type=int)
+    parser.add_argument('--work-dir',type=Path,help='New directory for Dex-Retarget artifacts')
     args = parser.parse_args()
+    if args.retarget_backend == 'dex-retarget':
+        if args.no_velocity_limit or args.no_collision_avoidance or args.ik_recovery != 'strict' or args.view:
+            parser.error('GMR IK/view switches do not apply to Dex-Retarget; use --retarget-mode and preview the output')
+        if args.input.suffix.lower() not in ('.pt','.pkl','.npz'):
+            parser.error('This backend bridge accepts SMPL-X; use dex-frax convert directly for BVH')
+        if args.output.exists():parser.error('Output exists; choose a new --output')
+        work=args.work_dir or args.output.with_suffix('.retarget-work')
+        if work.exists():parser.error('Use a new --work-dir for this direct conversion')
+        ident=backend_identity(args)
+        work.mkdir(parents=True)
+        (work/'backend_identity.json').write_text(json.dumps(ident,ensure_ascii=False,indent=2))
+        run_backend(args,args.input,args.output,work,input_fps=args.input_fps,up_axis=args.up_axis,units=args.units,max_frames=args.max_frames)
+        sys.exit(0)
+    if args.grounding != 'off' or any(x is not None for x in (args.input_fps,args.up_axis,args.units,args.max_frames,args.work_dir)):
+        parser.error('SMPL-X adapter options require --retarget-backend dex-retarget')
     if args.input.suffix.lower() == '.bvh':
         from general_motion_retargeting.utils.lafan1 import load_lafan1_file, load_soma_file
         loader = load_soma_file if args.bvh_format == "bvh_soma" else load_lafan1_file

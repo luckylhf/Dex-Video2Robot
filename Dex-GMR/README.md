@@ -226,3 +226,68 @@ cd "$DEX_ROOT/Dex-Mimic"
 - 位置或速度超限时，修正动作、降速或裁段后重新生成，不修改 URDF 或检查器阈值来过关。
 
 模型与 39/30 body、四元数等接口约定见 [模型说明](../docs/model_and_dynamics.md)。
+
+## 7. 可选 Dex-Retarget 后端与统一质量说明
+
+视频入口支持二选一：`--retarget-backend gmr`（默认，原有 IK 路径）或 `--retarget-backend dex-retarget`。视频规范化和 GVHMR 不变，Dex-Retarget 自己负责 SMPL-X 输入校验、人体几何、可选高度修正以及机器人重定向，之后仍使用本项目的 PKL→NPZ 接口。
+
+Dex-Retarget 需要带原生 SMPL-X 接口的版本。两种环境分开，**不要为了此功能把 JAX 安装进旧 GMR 环境**：
+
+```bash
+export DEX_RETARGET_ROOT=/path/to/Dex-Retarget
+export DEX_RETARGET_PYTHON="$DEX_RETARGET_ROOT/.venv/bin/python"
+# 当前 GMR Python 已有 torch/smplx，可以承担人体几何准备
+export SMPLX_PYTHON="$(command -v python)"
+
+bash run_video.sh /path/to/dance.mp4 \
+  --retarget-backend dex-retarget --grounding contact \
+  --static-camera --work-dir /tmp/dex_video_retarget_job \
+  --output /path/to/outputs/dance_retarget.pkl
+```
+
+只有固定相机才使用 `--static-camera`。`--grounding contact` 需要 GVHMR 的静止置信度；默认 `off`。它通过共同的平滑垂直偏移修正漂移，不逐帧强制双脚落地；真实跳跃、静态抬腿、台阶和长时间无支撑片段仍需检查。原有 GMR 不走这项新增预处理。
+
+新后端参数：
+
+| 参数 | 含义 |
+|---|---|
+| `--dex-retarget-root` / `DEX_RETARGET_ROOT` | Dex-Retarget 源码根目录 |
+| `--dex-retarget-python` / `DEX_RETARGET_PYTHON` | 求解器 Python；默认取该根目录 `.venv/bin/python` |
+| `--smplx-python` / `SMPLX_PYTHON` | 已装 Torch、SMPL-X、NumPy、SciPy 的人体准备环境，默认当前 Python |
+| `--retarget-mode auto/frax/hybrid/v8` | 默认 `auto`，按现有质量门槛逐级尝试 |
+| `--retarget-budget` | 自动模式总秒数，默认 86400；固定模式不应用该预算 |
+| `--grounding off/contact` | 是否使用输入人体的静止置信度校正高度 |
+
+`--ik-recovery`、`--no-velocity-limit`、`--no-collision-avoidance` 是 GMR 参数；选择 Dex-Retarget 时不接受这些非默认开关，避免把未生效的设置当作生效。默认输出名增加 `.dex-retarget.pkl`，减少与旧结果重名的机会。
+
+已有 SMPL-X 参数也可以跳过 MP4/GVHMR，直接通过同一后端桥接：
+
+```bash
+python scripts/retarget_motion.py /path/to/hmr4d_results.pt \
+  --retarget-backend dex-retarget --input-fps 30 --grounding contact \
+  --body-models assets/body_models \
+  --work-dir /tmp/dex_human_retarget_job \
+  --output /path/to/outputs/human_retarget.pkl
+```
+
+Dex-Retarget 原生支持数值 `.npz`、受限 NumPy 字典 `.pkl`、weights-only `.pt`，按内容校验 SMPL-X。必需根轴角 `(T,3)`、身体轴角 `(T,63)`、世界平移 `(T,3)`，或明确的 66/165 维合并姿态；还需要帧率、米制单位与 Y/Z-up 约定。普通输入可用 `--input-fps`、`--up-axis`、`--units m` 补充缺少的元数据。**AITViewer 能显示不等于本转换器能无歧义地采用**；SMPL/SMPL-H、机器人动作 PKL/NPZ、PCA 手姿态和非安全容器会被拒绝。完整字段表、缺失值策略、人体模型下载和校验命令见所安装 Dex-Retarget 的 README「SMPL-X 输入」章节；不要仅凭扩展名判断格式。旧 GMR 的 `.pt/.npz/BVH` 输入读取保持原行为，没有扩展为同等格式支持。
+
+### 两种后端都有质量报告
+
+输出 PKL 旁新增同名 `.quality.json`，原 GMR 的 `.ik.json` 仍按原恢复模式保存。视频流水线生成的原始/带过渡 NPZ 旁也保存 `.quality.json`，包含来源 PKL 哈希和该 NPZ 哈希。NPZ 报告继承源动作质量，并对最终根/关节数组重新做脚底几何和限位/速度检查；现有 NPZ 检查结果也会记录。下游站立过渡可能重新调整高度，因此不能只看源 PKL 的质量。**这些检查不把站立过渡称为已通过接触或动力学验收**。
+
+| 状态 | 含义 |
+|---|---|
+| `checked` | 原 GMR 的基础结构、关节限位、名义 URDF 速度和可视脚底几何检查无异常；源姿态一致性、接触正确性、脚滑和完整自碰撞仍列为未检查 |
+| `accepted` | Dex-Retarget 通过其运动学门槛，并通过桥接导出的共同基础检查 |
+| `review` | 结果保留供回看，报告列出具体问题；不意味着动作已经证明不可执行 |
+
+上表的 `accepted` 指源 PKL；最终 NPZ 含新增过渡，其源报告可以是 `accepted`，但最终状态最多为 `checked`，新增过渡的接触与动力学仍未验收。两种后端的检查范围不同，不能单看状态词横向排名。报告包含 `scope`、`flags`、`metrics`、`unchecked` 和 `dynamic_validation=false`。双脚离地比例只记录为诊断指标，不把真实跳跃自动判错。质量结果不改变原动作数值。
+
+按统一交付方式，`review` 也保留 PKL，并可以生成带质量说明的 NPZ，便于人工比较；文件在 `dataset/` 目录里不代表已通过训练验收。训练入库须读取报告选择数据，不能通配收集所有输出。Dex-Retarget 自身 `accepted.json`/`training.npz` 门槛保持不变；自动模式全部未通过时，桥接导出最后一个完整候选供预览，明确标 `review`，不冒充最佳或合格结果。
+
+### 缓存与兼容边界
+
+默认 GMR 的调用参数、IK、输出数组和原 `pipeline.json` 身份字段保持兼容，仅增加质量说明。旧任务恢复时若没有质量文件，会对现有 PKL 补做基础审计。
+
+Dex-Retarget 模式使用独立任务目录，并把后端源码/配置/机器人资产/依赖、人体模型、模式和接地选项写入视频任务身份。更换后端或实现不能复用旧结果。完整后端结果恢复时校验来源与输出哈希；失败阶段保留在工作目录，提示使用新目录，不覆盖已有诊断。机器人模型 SHA、29 个唯一关节名和四元数约定必须匹配，不能靠删掉字段或放松下游检查接通接口。

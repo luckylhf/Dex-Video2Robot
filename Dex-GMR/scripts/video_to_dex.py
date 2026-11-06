@@ -27,7 +27,16 @@ def main():
     parser.add_argument('--mimic-output-dir', type=Path, help='Optional NPZ destination instead of Mimic dataset/')
     parser.add_argument('--work-dir', type=Path, help='Explicit job directory (ASCII path required by Hydra)')
     parser.add_argument('--resume', action='store_true', help='Resume the job selected by --work-dir')
+    from retarget_backend import add_options, identity as backend_identity, run as run_backend
+    add_options(parser)
     args = parser.parse_args()
+    if args.retarget_backend == 'gmr' and args.grounding != 'off':
+        parser.error('--grounding currently requires --retarget-backend dex-retarget')
+    if args.retarget_backend == 'dex-retarget' and (args.no_velocity_limit or args.no_collision_avoidance or args.ik_recovery != 'strict'):
+        parser.error('GMR IK switches do not apply to Dex-Retarget; use --retarget-mode instead')
+    import math
+    if not math.isfinite(args.retarget_budget) or args.retarget_budget <= 0:
+        parser.error('--retarget-budget must be positive and finite')
     video = args.video.resolve()
     if not video.is_file() or video.suffix.lower() != '.mp4':
         parser.error('Provide an existing MP4 input')
@@ -41,7 +50,7 @@ def main():
     # Fail fast: GVHMR takes minutes, do not start it without the body models
     from check_body_models import require_body_models
     require_body_models(args.body_models, ('neutral',))
-    output = args.output.resolve() if args.output else ROOT / 'data/outputs' / (video.stem + '.pkl')
+    output = args.output.resolve() if args.output else ROOT / 'data/outputs' / (video.stem + ('.dex-retarget' if args.retarget_backend == 'dex-retarget' else '') + '.pkl')
     if args.resume and not args.work_dir:
         parser.error('--resume requires --work-dir')
     if args.work_dir:
@@ -66,6 +75,8 @@ def main():
                     no_collision_avoidance=args.no_collision_avoidance,
                     ik_recovery=args.ik_recovery,
                     body_models=str(args.body_models.resolve()))
+    if args.retarget_backend == 'dex-retarget':
+        identity['retarget_backend'] = backend_identity(args)
     state = work / 'pipeline.json'
     if args.resume:
         if not state.is_file() or json.loads(state.read_text()) != identity:
@@ -95,14 +106,28 @@ def main():
     if not prediction.is_file():
         raise FileNotFoundError(f'GVHMR prediction missing: {prediction}')
     if not (args.resume and output.is_file()):
-        retarget = [sys.executable, str(ROOT / 'scripts/retarget_motion.py'), str(prediction),
-                    '--body-models', str(args.body_models.resolve()), '--output', str(output)]
-        if args.no_velocity_limit:
-            retarget.append('--no-velocity-limit')
-        if args.no_collision_avoidance:
-            retarget.append('--no-collision-avoidance')
-        retarget.extend(['--ik-recovery', args.ik_recovery])
-        subprocess.run(retarget, check=True, env=env)
+        if args.retarget_backend == 'dex-retarget':
+            run_backend(args,prediction,output,work,input_fps=30.)
+        else:
+            retarget = [sys.executable, str(ROOT / 'scripts/retarget_motion.py'), str(prediction),
+                        '--body-models', str(args.body_models.resolve()), '--output', str(output)]
+            if args.no_velocity_limit:
+                retarget.append('--no-velocity-limit')
+            if args.no_collision_avoidance:
+                retarget.append('--no-collision-avoidance')
+            retarget.extend(['--ik-recovery', args.ik_recovery])
+            subprocess.run(retarget, check=True, env=env)
+    from motion_quality import report, sha
+    quality_path = output.with_suffix('.quality.json')
+    if args.retarget_backend == 'gmr':
+        if not quality_path.exists() or json.loads(quality_path.read_text()).get('output_sha256') != sha(output):
+            report(output,model_file,manifest,'gmr')
+    elif not quality_path.exists() or json.loads(quality_path.read_text()).get('output_sha256') != sha(output):
+        raise ValueError('Dex-Retarget output/quality pair changed; use a new job')
+    if args.retarget_backend == 'dex-retarget':
+        from retarget_backend import verify_export
+        verify_export(output,prediction)
+    quality = json.loads(quality_path.read_text())
     if args.mimic_dir:
         mimic = args.mimic_dir.resolve()
         destination = args.mimic_output_dir.resolve() if args.mimic_output_dir else mimic / 'dataset'
@@ -110,9 +135,19 @@ def main():
                         '--robot', 'dex_evt', '--output_name', str(destination / 'npz_dex_raw' / output.stem),
                         '--output_dir', str(destination / 'npz_dex'), '--add_transition', '--recompute_velocities'],
                        cwd=mimic, check=True, env=env)
-        subprocess.run([args.mimic_python, str(mimic / 'scripts/check_motion.py'),
-                        str(destination / 'npz_dex' / (output.stem + '_with_transition.npz'))],
-                       cwd=mimic, check=True, env=env)
+        npz_check_passed = False
+        try:
+            subprocess.run([args.mimic_python, str(mimic / 'scripts/check_motion.py'),
+                            str(destination / 'npz_dex' / (output.stem + '_with_transition.npz'))],
+                           cwd=mimic, check=True, env=env)
+            npz_check_passed = True
+        finally:
+            for npz in (destination / 'npz_dex_raw' / (output.stem + '.npz'),
+                        destination / 'npz_dex' / (output.stem + '_with_transition.npz')):
+                from motion_quality import report_npz
+                report_npz(npz,model_file,manifest,quality,
+                           destination/'npz_dex'/(output.stem+'_with_transition.npz'),npz_check_passed)
+    print(f'[pipeline] Quality: {quality["status"]}; read {quality_path} before selecting training data',flush=True)
     print(f'Video pipeline completed. PKL: {output}; job: {work}', flush=True)
 
 
