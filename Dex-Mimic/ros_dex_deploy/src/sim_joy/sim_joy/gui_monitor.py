@@ -46,8 +46,8 @@ class TeleopJoyNode(Node):
     AXES_LEN = 12
     AXIS_KEYS = frozenset({'1', '2', '3', '4', '6', '7', '8', '9'})
     AXIS_OVERRIDE_INDEX = {
-        'y2': 0,
-        'turn': 1,
+        'turn': 0,
+        'y2': 1,
         'y1': 2,
         'x1': 3,
     }
@@ -312,8 +312,8 @@ class TeleopJoyNode(Node):
         if not gs['connected'] or now - self._last_gamepad_event > self.gamepad_timeout:
             gs['connected'] = False
             return axes
-        axes[0] = self._apply_deadzone(-gs['y2'])
-        axes[1] = self._apply_deadzone(-gs['turn'])
+        axes[0] = self._apply_deadzone(-gs['turn'])
+        axes[1] = self._apply_deadzone(-gs['y2'])
         axes[2] = self._apply_deadzone(-gs['forward'])
         axes[3] = self._apply_deadzone(-gs['lateral'])
         b = gs['buttons']
@@ -323,8 +323,8 @@ class TeleopJoyNode(Node):
 
     def _axes_from_keyboard(self):
         axes = [0.0] * self.AXES_LEN
-        axes[0] = self._axis_value_from_keys(('3',), ('1',))
-        axes[1] = self._axis_value_from_keys(('9',), ('7',))
+        axes[0] = self._axis_value_from_keys(('9',), ('7',))
+        axes[1] = self._axis_value_from_keys(('3',), ('1',))
         axes[2] = self._axis_value_from_keys(('8',), ('2',))
         axes[3] = self._axis_value_from_keys(('6',), ('4',))
         axes[4] = self._switch_states['e']
@@ -361,8 +361,8 @@ class TeleopJoyNode(Node):
         msg.button_h = int(self._switch_states['h'])
         msg.x1 = float(self._clamp(axes[3]))
         msg.y1 = float(self._clamp(axes[2]))
-        msg.x2 = float(self._clamp(axes[1]))
-        msg.y2 = float(self._clamp(axes[0]))
+        msg.x2 = float(self._clamp(axes[0]))
+        msg.y2 = float(self._clamp(axes[1]))
         self.sbus_publisher.publish(msg)
 
     def _apply_deadzone(self, v):

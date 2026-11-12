@@ -764,7 +764,7 @@ class RobotSimulator:
         if n > 3:
             self.cmd_vel_x = axes[2]
             self.cmd_vel_y = axes[3]
-            self.cmd_turn = axes[1]
+            self.cmd_turn = axes[0]
 
         # A 键：按住 0.3 s 才释放弹性带，与 rl_control 的 A 长按判定同步。
         # 若选中即脱绳，rl_control 还停在 MIMICDEFAULT（纯 PD），机器人会直挺挺倒下。
