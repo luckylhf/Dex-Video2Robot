@@ -1,8 +1,10 @@
+# Derived from Open-X-Humanoid/xGMR (Apache-2.0) and GMR (MIT).
+# Modifications Copyright (c) 2026, Loong: BVH adapters and SciPy transforms.
+# See Dex-GMR/LICENSE and THIRD_PARTY_NOTICES.md at the repository root.
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-import general_motion_retargeting.utils.lafan_vendor.utils as utils
-from general_motion_retargeting.utils.lafan_vendor.extract import read_bvh, read_bvh_soma
+from .bvh import read_bvh, world_transforms
 
 
 def _canonicalize_bone_name(bone_name: str) -> str:
@@ -20,15 +22,15 @@ def _canonicalize_bone_name(bone_name: str) -> str:
     return bone_name
 
 def arrange_realtime_data(quats, pos, parents, bones):
-    global_data = utils.quat_fk(quats, pos, parents)
+    global_data = world_transforms(quats, pos, parents)
 
     # BVH files are typically Y-up. Rotate into the robot's Z-up frame.
     rotation_matrix = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
-    rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    frame_rotation = R.from_matrix(rotation_matrix)
 
     frame = {}
     for i, bone in enumerate(bones):
-        orientation = utils.quat_mul(rotation_quat, global_data[0][0, i])
+        orientation = (frame_rotation * R.from_quat(global_data[0][0, i], scalar_first=True)).as_quat(scalar_first=True)
         position = global_data[1][0, i] @ rotation_matrix.T / 100  # cm to m
         canonical_bone = _canonicalize_bone_name(bone)
         frame[canonical_bone] = (position, orientation)
@@ -39,32 +41,23 @@ def arrange_realtime_data(quats, pos, parents, bones):
     
     return frame
 
-def _parse_bvh_frametime(bvh_file):
-    import re
-    with open(bvh_file, "r") as f:
-        for line in f:
-            m = re.match(r"\s*Frame Time:\s+([\d.]+)", line)
-            if m:
-                return float(m.group(1))
-    return None
-
 def load_soma_file(bvh_file):
     """
     Load a SOMA-format BVH file (mixed per-joint channel counts).
     Bone naming differs from lafan1: LeftLeg=upper leg, LeftShin=lower leg.
     """
-    data = read_bvh_soma(bvh_file)
-    global_data = utils.quat_fk(data.quats, data.pos, data.parents)
+    data = read_bvh(bvh_file)
+    global_data = world_transforms(data.quats, data.pos, data.parents)
 
     # BVH files are Y-up. Rotate into the robot's Z-up frame.
     rotation_matrix = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]])
-    rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    frame_rotation = R.from_matrix(rotation_matrix)
 
     frames = []
     for frame in range(data.pos.shape[0]):
         result = {}
         for i, bone in enumerate(data.bones):
-            orientation = utils.quat_mul(rotation_quat, global_data[0][frame, i])
+            orientation = (frame_rotation * R.from_quat(global_data[0][frame, i], scalar_first=True)).as_quat(scalar_first=True)
             position = global_data[1][frame, i] @ rotation_matrix.T / 100  # cm to m
             canonical_bone = _canonicalize_bone_name(bone)
             result[canonical_bone] = (position, orientation)
@@ -77,8 +70,7 @@ def load_soma_file(bvh_file):
     human_height = result["Head"][0][2] - min(result["LeftFootMod"][0][2], result["RightFootMod"][0][2])
     human_height = 1.75
 
-    frametime = _parse_bvh_frametime(bvh_file)
-    actual_fps = (1.0 / frametime) if frametime else None
+    actual_fps = 1.0 / data.frame_time
 
     return frames, human_height,actual_fps
 
@@ -93,17 +85,17 @@ def load_lafan1_file(bvh_file):
     }
     """
     data = read_bvh(bvh_file)
-    global_data = utils.quat_fk(data.quats, data.pos, data.parents)
+    global_data = world_transforms(data.quats, data.pos, data.parents)
 
     # BVH files are typically Y-up. Rotate into the robot's Z-up frame.
     rotation_matrix = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]])# @ np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
-    rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    frame_rotation = R.from_matrix(rotation_matrix)
 
     frames = []
     for frame in range(data.pos.shape[0]):
         result = {}
         for i, bone in enumerate(data.bones):
-            orientation = utils.quat_mul(rotation_quat, global_data[0][frame, i])
+            orientation = (frame_rotation * R.from_quat(global_data[0][frame, i], scalar_first=True)).as_quat(scalar_first=True)
             position = global_data[1][frame, i] @ rotation_matrix.T / 100  # cm to m
             canonical_bone = _canonicalize_bone_name(bone)
             result[canonical_bone] = (position, orientation)
@@ -118,7 +110,6 @@ def load_lafan1_file(bvh_file):
     # human_height = human_height + 0.2  # cm to m
     human_height = 1.75  # cm to m
 
-    frametime = _parse_bvh_frametime(bvh_file)
-    actual_fps = (1.0 / frametime) if frametime else None
+    actual_fps = 1.0 / data.frame_time
 
     return frames, human_height,actual_fps

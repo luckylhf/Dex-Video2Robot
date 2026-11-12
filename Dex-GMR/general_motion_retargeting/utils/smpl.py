@@ -1,11 +1,13 @@
+# Derived from Open-X-Humanoid/xGMR (Apache-2.0) and GMR (MIT).
+# Modifications Copyright (c) 2026, Loong: body-model loading and SciPy rotation composition.
+# GVHMR prediction reader: adapts xGMR's output-file interface.
+# See Dex-GMR/LICENSE and THIRD_PARTY_NOTICES.md at the repository root.
 import numpy as np
 import smplx
 import torch
 from scipy.spatial.transform import Rotation as R
 from smplx.joint_names import JOINT_NAMES
 from scipy.interpolate import interp1d
-
-import general_motion_retargeting.utils.lafan_vendor.utils as utils
 
 def load_smpl_file(smpl_file):
     smpl_data = np.load(smpl_file, allow_pickle=True)
@@ -354,10 +356,10 @@ def get_gvhmr_data_offline_fast(smplx_data, body_model, smplx_output, tgt_fps=30
         
     # add correct rotations
     rotation_matrix = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
-    rotation_quat = R.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    frame_rotation = R.from_matrix(rotation_matrix)
     for result in smplx_data_frames:
         for joint_name in result.keys():
-            orientation = utils.quat_mul(rotation_quat, result[joint_name][1])
+            orientation = (frame_rotation * R.from_quat(result[joint_name][1], scalar_first=True)).as_quat(scalar_first=True)
             position = result[joint_name][0] @ rotation_matrix.T
             result[joint_name] = (position, orientation)
             

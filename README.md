@@ -41,7 +41,7 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 | [![Isaac 站立场景](docs/4-isaacsim-standing.png)](docs/4-isaacsim-standing.png) | [![Isaac 动作场景](docs/5-isaacsim-dance.png)](docs/5-isaacsim-dance.png) | [![ROS2 MuJoCo 与 Teleop GUI](docs/6-ROS2+Mujoco.png)](docs/6-ROS2+Mujoco.png) |
 | 在 Isaac 中播放站立策略，观察站立表现。 | 在 Isaac 中播放动作策略，检查动作跟踪效果。 | 通过 ROS2 控制链路运行 MuJoCo，使用 Teleop GUI 操作。 |
 
-## 本项目整理了什么
+## 模型与控制配置
 
 - 统一当前 Dex 的 URDF、MJCF、关节名、限位和脚底碰撞，保留当前本体质量与惯性。
 - 身体为 **29 个活动关节**，头部两轴固定，保留头部质量；左右肘 yaw、腕 pitch/roll 六轴保持活动，不控制手指。
@@ -50,11 +50,11 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 - 校验模型、URDF、网格、策略和动作文件的版本一致性；自定义部署包由一个 `MIMIC_BUNDLE_DIR` 同时控制检查器、FSM 与仿真节点。
 - 提供中文视频名处理、分阶段续跑、预制权重初始化、自动跟随镜头、无限网格地面和 ROS2 Teleop GUI。
 
-关节控制保留了一项历史配置：**23 轴接受策略残差修正，左右前臂旋转及手腕 pitch/roll 共 6 轴由 PD 直接跟踪参考动作**。六轴仍会随参考动作运动。希望全部 29 个身体活动关节都参与策略修正的使用者，可按 [历史配置与调整说明](Dex-Mimic/README.md#joint-control-legacy) 自行调整并重新训练验证。
+关节控制采用以下配置：**23 轴接受策略残差修正，左右前臂旋转及手腕 pitch/roll 共 6 轴由 PD 直接跟踪参考动作**。六轴仍会随参考动作运动。希望全部 29 个身体活动关节都参与策略修正的使用者，可按 [六轴残差调整说明](Dex-Mimic/README.md#joint-control-legacy) 自行调整并重新训练验证。
 
 电机参数来源与数值含义见 [模型与动力学说明](docs/model_and_dynamics.md)。
 
-**各环节分别保持软件包原配置：Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署主循环与推理 100 Hz。** 真机的 100 Hz 要求适用于 ROS 部署。参考动作为 50 fps，独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，播放速度均不变。具体区别见 [部署频率说明](docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
+**Isaac 训练/播放和独立 MuJoCo 使用 50 Hz，ROS 部署主循环与网络推理使用 100 Hz。** 参考动作保持 50 fps；ROS 每帧刷新观测并推理两次，播放速度不变。周期设置见 [部署频率说明](docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
 
 ## 随包权重
 
@@ -65,7 +65,7 @@ PKL/NPZ 回放用于检查参考动作；运行策略则由神经网络和物理
 | `wbt_model_46400.pt` | 软件包提供的预制动作跟踪权重，用于加快新动作训练 |
 | `standing_baseline.pt` | 适配当前本体的站立基线，用于站立播放、默认演示和站立微调初始化 |
 
-**团队经验：加载预制动作权重后，约 3000 次迭代可开始看到效果。** 这是训练起点的经验值，不代表任意动作在 3000 次迭代后都已收敛。目标舞蹈仍需检查跟踪误差、跌倒和起止切换。
+建议从预制动作权重开始训练，约 3000 次迭代后检查效果，再根据跟踪误差、跌倒及起止切换继续训练。迭代数是经验起点。
 
 `LOAD_CKPT` 显式加载权重和兼容的归一化状态，重新开始优化；`RESUME=true` 恢复已有训练。两者不能同时使用。训练脚本不会暗中加载预制权重。
 
@@ -109,10 +109,12 @@ bash run_sim.sh
 
 GUI 顺序：F=`down` → 勾 D 后取消 → 用 DOWN 降至脚底贴地 → 保持 F=`down`，**勾 A 约 1 s 再取消（长按触发）**。日志出现进入 `MIMIC` 才表示站立策略正在运行；`MIMICDEFAULT` 是准备阶段的 PD 姿态保持。C 停止。
 
-## 目录与发行边界
+## 目录与打包
 
 ```text
-LICENSE                         # BSD 3-Clause
+LICENSE                         # 原创部分 BSD-3-Clause
+THIRD_PARTY_NOTICES.md           # 第三方来源与适用许可
+licenses/                       # 完整许可文本
 README.md                       # 总览
 docs/                           # 模型、动力学、来源说明与免责声明
 tools/                          # 只读发行检查及打包
@@ -120,7 +122,7 @@ Dex-GMR/                        # 视频与动作重定向
 Dex-Mimic/                      # 训练、仿真与部署
 ```
 
-发行包包含两个功能包、机器人资产、预制权重、默认站立演示及回归测试源码。打包清单为 `LICENSE`、`.gitignore`、`README.md`、`docs/`、`tools/`、`Dex-GMR/`、`Dex-Mimic/`，其中 `Dex-Mimic/outputs/` 单独排除。用户视频和中间数据默认不包含在内，可通过 `--include-data` 选择携带。
+发行包包含两个功能包、机器人资产、预制权重、默认站立演示及回归测试源码。打包会携带 `THIRD_PARTY_NOTICES.md` 和 `licenses/` 等许可文件，并排除 `Dex-Mimic/outputs/`。用户视频和中间数据默认不包含在内，可通过 `--include-data` 选择携带。
 
 ```bash
 cd "$DEX_ROOT"
@@ -137,8 +139,10 @@ python tools/release.py --output /tmp/dex-pipeline-release.tar.gz
 
 ## 免责声明
 
-使用本仓库前请完整阅读 [免责声明](docs/DISCLAIMER.md)（同一文档的 PDF 版本：[机器人运控框架免责声明.pdf](docs/机器人运控框架免责声明.pdf)）。人形机器人的训练、仿真与部署属于高风险作业，须由受训人员在符合 ISO 10218、ISO/TS 15066 的环境下操作，并配备急停与物理防护。软件按「现状」提供，不附带任何明示或暗示的保证。
+运行真机前请阅读[使用许可与安全说明](docs/DISCLAIMER.md)（[PDF](docs/机器人运控框架免责声明.pdf)），准备急停和防跌落措施，并先完成仿真测试。软件按“现状”提供。
 
 ## 来源与许可
 
-感谢 [xGMR](https://github.com/Open-X-Humanoid/xGMR)、[xMimic](https://github.com/Open-X-Humanoid/xMimic)、[xSIM_MUJOCO](https://github.com/Open-X-Humanoid/xSIM_MUJOCO)、[GVHMR](https://github.com/zju3dv/GVHMR)、Isaac Lab、MuJoCo 与 Mink。本仓库整体采用 BSD 3-Clause，全文见 [LICENSE](LICENSE)；组件沿用各自的作者声明与许可，见 [Dex-GMR/LICENSE](Dex-GMR/LICENSE)、[Dex-Mimic/LICENCE](Dex-Mimic/LICENCE) 及各组件目录。人体模型、机器人模型和第三方权重的来源说明随对应资源保留。
+本项目基于 [xGMR](https://github.com/Open-X-Humanoid/xGMR)、[GMR](https://github.com/YanjieZe/GMR)、[xMimic](https://github.com/Open-X-Humanoid/xMimic) 和 [xSIM_MUJOCO](https://github.com/Open-X-Humanoid/xSIM_MUJOCO)，并使用 Isaac Lab、MuJoCo、Mink 等工具。原创部分采用 [BSD-3-Clause](LICENSE)，第三方代码保留原许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+视频人体预测使用 [GVHMR](https://github.com/zju3dv/GVHMR)，人体重建使用 [SMPL-X](https://smpl-x.is.tue.mpg.de/)。两者需按官方许可另行获取；商业使用需取得相应授权。使用 Ubisoft La Forge 的 LAFAN1 数据时，遵守其 [CC BY-NC-ND 4.0 许可](https://github.com/ubisoft/ubisoft-laforge-animation-dataset/blob/master/license.txt)。论文引用和许可全文入口见第三方说明。

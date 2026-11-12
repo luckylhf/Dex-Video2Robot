@@ -1,3 +1,6 @@
+# Portions derived from Open-X-Humanoid/xGMR (Apache-2.0) and GMR (MIT).
+# Modifications Copyright (c) 2026, Loong: Dex models, IK, data and viewer integration.
+# See ../LICENSE and ../../THIRD_PARTY_NOTICES.md.
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent

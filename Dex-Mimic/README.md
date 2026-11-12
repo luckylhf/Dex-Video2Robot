@@ -66,7 +66,7 @@ bash replay.sh --npz-dir dataset/npz_dex
 | `--tail_skip_frames` | `-1` | 结尾裁帧数；`-1` 表示按速度阈值自动裁 |
 | `--skip_threshold` | `1.5` rad/s | 自动裁帧的关节速度阈值（低于它视为"还没开始动"） |
 
-> 默认的 1+1+2.5+1.0 s 会让带过渡 NPZ 比 raw NPZ 多 5.5 s（共 275 帧 @50 fps）。调短会让训练数据更紧凑但可能影响起止稳定性。
+默认过渡共 5.5 s（275 帧 @50 fps）；自动裁帧后，总时长还取决于保留的原始片段。可缩短过渡，但应检查起止稳定性。
 
 示例：从单个 PKL 重转，缩短过渡段：
 
@@ -84,7 +84,7 @@ python scripts/pkl_to_npz.py \
 
 `replay.sh` 只回放参考轨迹，不运行策略。训练前检查动作方向、关节范围、脚底、轨迹漂移和起止过渡。新动作数据通过 GMR 生成。
 
-如果 GMR 阶段报 `NoSolutionFound`，按 [IK 无解处理流程](../Dex-GMR/README.md#ik-no-solution) 排查：优先显式使用 `--no-collision-avoidance` 保留速度约束，复用人体预测重新生成动作，再执行 `check_motion.py`。只有检查成功退出后才训练；生成了 NPZ 文件不代表已通过检查。该检查覆盖关节位置、速度与 FK 等数据约定，不检查自碰撞，仍需回放参考并验证物理策略。
+GMR 日常转换使用 `--ik-recovery table-retry`；遇到 `NoSolutionFound` 时按 [IK 处理流程](../Dex-GMR/README.md#ik-no-solution)复用人体预测重跑。训练前读取 `.quality.json` 并运行 `check_motion.py`，处理 `review` 中的问题，再检查动作回放。数据检查覆盖关节位置、速度和 FK；自碰撞、平衡及策略效果在回放和仿真中继续检查。
 
 随包的 `dataset/standing/standing.npz` 是当前本体的静态站立参考，需要重建时执行 `python scripts/make_standing_motion.py`。
 
@@ -92,7 +92,7 @@ python scripts/pkl_to_npz.py \
 
 切换到 Isaac 环境。默认采用 `tg3-armature` 电机配置。
 
-各环节分别沿用软件包原配置：**Isaac 训练/播放 50 Hz、独立 MuJoCo 50 Hz、ROS 部署推理 100 Hz**。参考 NPZ 为 50 fps；独立 MuJoCo 每帧推理一次，ROS 每帧推理两次，均按正常时长播放。真机至少 100 Hz 的实测要求适用于 ROS 部署，不扩展到训练和独立 MuJoCo。原因与周期记录方式见 [动力学说明](../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
+**Isaac 训练/播放与独立 MuJoCo 使用 50 Hz，ROS 部署推理使用 100 Hz。** 参考动作保持 50 fps，ROS 每帧刷新观测并推理两次，播放速度不变。周期说明见[模型与动力学](../docs/model_and_dynamics.md#为什么部署至少需要-100-hz)。
 
 动作初始化示例：
 
@@ -103,7 +103,7 @@ RESUME=false LOAD_CKPT=policy/dex/wbt_model_46400.pt \
   bash train_dex.sh medium dataset/npz_dex/dance_with_transition.npz 1
 ```
 
-先验证环境时可用 `NUM_ENVS=64 MAX_ITER=101` 执行相同入口。`save_interval=100`，且训练循环结束后不会补存 checkpoint，所以迭代数少于 100 时不会落盘任何权重；101 次可产出 `model_100.pt`，够做一次播放验证。冒烟测试只证明能完成 PPO 更新，不证明动作质量；约 3000 次迭代初见成效是团队经验，目标动作还需评估。
+先验证环境时可用 `NUM_ENVS=64 MAX_ITER=101` 执行相同入口。`save_interval=100`，且训练循环结束后不会补存 checkpoint，所以迭代数少于 100 时不会落盘任何权重；101 次可产出 `model_100.pt`，够做一次播放验证。先用短训练检查环境，再以约 3000 次迭代为起点观察动作效果。
 
 | 模式 | 默认总环境数 | 默认迭代数 |
 | --- | ---: | ---: |
@@ -134,9 +134,9 @@ RESUME=true bash train_dex.sh medium dataset/npz_dex/dance_with_transition.npz \
 
 <a id="joint-control-legacy"></a>
 
-### 关节控制的历史配置与可选调整
+### 六轴残差调整
 
-当前训练配置沿用了旧 `mimic_c1_dex` 参考实现中的六轴零残差设置。模型、参考动作及部署接口都保留 **29 个身体活动关节**；其中 **23 轴接受策略残差修正**，左右 `elbow_yaw`（前臂旋转）、`wrist_pitch`（手腕俯仰）、`wrist_roll`（手腕滚转）共 **6 轴由 PD 直接跟踪参考角度**。这六轴会随动作变化，并未固定在某个站立姿势；其策略输出因 `action_scale=0` 不直接修正目标角度。
+模型、参考动作及部署接口使用 **29 个身体活动关节**；其中 **23 轴接受策略残差修正**，左右 `elbow_yaw`（前臂旋转）、`wrist_pitch`（手腕俯仰）、`wrist_roll`（手腕滚转）共 **6 轴由 PD 直接跟踪参考角度**。这六轴会随动作变化，并未固定在某个站立姿势；其策略输出因 `action_scale=0` 不直接修正目标角度。
 
 动作目标可概括为 `目标角度 = 参考角度 + 策略输出 × action_scale`（省略滤波与限位）。希望全部 29 轴统一采用“参考动作 + 策略残差”的使用者，可自行按以下步骤调整：
 
@@ -170,7 +170,7 @@ bash play_dex.sh
 
 ONNX 同时携带模型、URDF/网格整体哈希、关节顺序、逐轴 armature、PD、动作缩放、限位和控制周期。旧版缺少发布契约的 ONNX 会被拒绝，需要用当前导出器重新导出。
 
-新 checkpoint 会记录模型和执行器配置，恢复/播放时要求匹配。没有来源记录的旧 PT 只允许随包、已核验的 `standing_baseline.pt` 直接播放；其他旧权重请通过 `LOAD_CKPT` 初始化并训练后再导出，不能只换模型标识冒充适配。
+新 checkpoint 记录模型和执行器配置，播放和导出时需匹配。随包 `standing_baseline.pt` 可配合 JSON 直接播放；其他缺少内置配置记录的旧 PT 请通过 `LOAD_CKPT` 训练后再导出。
 
 ## 5. 打包并选择新动作
 
@@ -213,3 +213,7 @@ python scripts/validate_standing_mujoco.py --gui --seconds 60 \
 ```
 
 这两个入口固定选择站立头并且不自动复位。诊断数据写入指定输出，不混进训练数据。评估站立时同时观察倾角、跌倒和水平漂移。
+
+## 来源与许可
+
+训练框架基于 xMimic，保留 [MIT 许可](LICENCE)；Isaac Lab 来源文件及其他依赖按各自许可使用，见[第三方说明](../THIRD_PARTY_NOTICES.md)。

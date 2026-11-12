@@ -1,3 +1,6 @@
+# Portions derived from Open-X-Humanoid/xSIM_MUJOCO (Apache-2.0).
+# Modifications Copyright (c) 2026, Loong: Dex ROS2 simulation integration.
+# See ../LICENSE.
 import mujoco
 import numpy as np
 from typing import Literal

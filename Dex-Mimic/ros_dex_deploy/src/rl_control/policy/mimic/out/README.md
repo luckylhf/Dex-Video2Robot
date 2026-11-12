@@ -4,4 +4,4 @@
 
 ROS 部署推理为 100 Hz，参考动作为 50 fps。`bundle.json` 的 `policy_control_dt=0.01` 表示 ROS 推理周期；`training_control_dt=0.02` 保留 ONNX 对应的训练周期。独立 MuJoCo 默认使用 50 Hz。
 
-新动作请完成训练和导出后，使用 `prepare_deploy.py --output` 创建新包，再通过 `MIMIC_BUNDLE_DIR` 选择，见 [部署说明](../../../../../README.md)。
+切换到新动作时，完成训练和导出，使用 `prepare_deploy.py --output` 创建新包，再通过 `MIMIC_BUNDLE_DIR` 选择，见 [部署说明](../../../../../README.md)。

@@ -1,3 +1,6 @@
+# Portions derived from Open-X-Humanoid/xSIM_MUJOCO (Apache-2.0).
+# Modifications Copyright (c) 2026, Loong: Dex ROS2 simulation integration.
+# See ../LICENSE.
 """
 MuJoCo机器人控制脚本
 实现位置和力矩混合控制，读取传感器数据

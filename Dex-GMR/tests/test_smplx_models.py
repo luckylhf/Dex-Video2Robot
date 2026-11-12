@@ -12,6 +12,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'scripts'))
 from general_motion_retargeting.utils.smpl import (
     load_smplx_file, load_gvhmr_pred_file, get_smplx_data_offline_fast,
 )
@@ -58,11 +59,13 @@ class SmplxModelsTest(unittest.TestCase):
             with self.subTest(expected=expected), patch.dict(os.environ, env, clear=True):
                 argv = ['retarget_motion.py', 'prediction.pt', '--output', 'unused.pkl', *options]
                 with patch.object(sys, 'argv', argv), patch(
+                    'check_body_models.require_body_models') as preflight, patch(
                     'general_motion_retargeting.utils.smpl.load_gvhmr_pred_file',
                     side_effect=RuntimeError('loader reached')) as loader:
                     with self.assertRaisesRegex(RuntimeError, 'loader reached'):
                         runpy.run_path(str(ROOT / 'scripts/retarget_motion.py'), run_name='__main__')
                     self.assertEqual(loader.call_args.args[1], str(expected))
+                    self.assertEqual(Path(preflight.call_args.args[0]), expected)
 
 
 if __name__ == '__main__':
